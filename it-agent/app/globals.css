@@ -20,6 +20,9 @@
     --color-accent-soft: var(--accent-soft);
     --color-action-neutral: var(--action-neutral);
     --color-action-neutral-foreground: var(--action-neutral-foreground);
+    --color-chrome: var(--bg-chrome);
+    --color-chrome-foreground: var(--bg-chrome-foreground);
+    --color-chrome-border: var(--border-chrome);
     --color-state-error: var(--state-error);
     --color-state-success: var(--state-success);
     --color-state-pending: var(--state-pending);
@@ -80,6 +83,15 @@
     --action-neutral: #18181b;
     --action-neutral-foreground: #ffffff;
     --border-default: #e4e4e7;
+
+    /* Editor chrome — the one dark surface in an otherwise light-only
+       theme, used by the editor navbar (feature spec 02-editor). Kept
+       separate from --action-neutral so the near-black action colour keeps
+       its own meaning ("submit this message"). */
+    --bg-chrome: #18181b;
+    --bg-chrome-foreground: #fafafa;
+    --border-chrome: #27272a;
+
     --state-error: #dc2626;
     --state-success: #22c55e;
     --state-pending: #f59e0b;

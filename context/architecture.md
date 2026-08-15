@@ -22,6 +22,8 @@
 - `lib/db/` — Drizzle schema, client, and seed data for the 6 tables
 - `lib/tools/` — the 6 agent tool functions (`get_employee`, `check_account_status`, `reset_password`, `unlock_account`, `check_software_access`, `request_software_access`)
 - `components/` — chat UI, agent activity panel, shadcn/ui primitives
+- `components/ui/` — vendored shadcn primitives, added via the CLI and never hand-edited
+- `components/editor/` — editor chrome composed from those primitives (navbar, project sidebar, shared dialog pattern)
 
 ## Storage Model
 
