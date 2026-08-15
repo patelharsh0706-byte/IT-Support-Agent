@@ -25,6 +25,21 @@ All components must use these tokens — no hardcoded hex values.
 | Success           | `--state-success`  | `#22C55E` |
 | Pending           | `--state-pending`  | `#F59E0B` |
 
+### Editor chrome
+
+The editor navbar is the one dark surface in the light-only theme (feature
+spec `02-editor`). It has its own tokens so `--action-neutral` keeps its
+single meaning ("submit this message") rather than doubling as a chrome fill.
+
+| Role                | CSS Variable             | Value     |
+| ------------------- | ------------------------ | --------- |
+| Chrome surface      | `--bg-chrome`            | `#18181B` |
+| Chrome foreground   | `--bg-chrome-foreground` | `#FAFAFA` |
+| Chrome hairline     | `--border-chrome`        | `#27272A` |
+
+Chrome tokens are for the editor navbar only. Panels, cards, and inputs stay
+on `--bg-surface` — a dark panel would break the light-only language.
+
 Usage rules:
 
 - `--bg-base` is the page. `--bg-surface` is every panel, card, and input. Never invert the two.
