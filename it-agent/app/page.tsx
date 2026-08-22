@@ -1,7 +1,9 @@
-export default function Home() {
-  return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div>IT Agent</div>
-    </div>
-  );
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+
+export default async function Home() {
+  const { sessionClaims } = await auth();
+  const role = (sessionClaims?.metadata as { role?: string } | undefined)?.role;
+
+  redirect(role === "csr" ? "/admin" : "/editor");
 }

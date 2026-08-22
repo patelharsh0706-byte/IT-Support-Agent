@@ -1,5 +1,6 @@
 "use client"
 
+import { UserButton } from "@clerk/nextjs"
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -16,8 +17,8 @@ interface EditorNavbarProps {
 
 /**
  * Fixed-height top navbar that frames every editor screen. Left section holds
- * the sidebar toggle; the centre and right sections are reserved and stay
- * empty until a later unit fills them.
+ * the sidebar toggle; right section holds the signed-in user menu; centre is
+ * reserved and stays empty until a later unit fills it.
  */
 export function EditorNavbar({
   isSidebarOpen,
@@ -50,7 +51,9 @@ export function EditorNavbar({
 
       <div className="flex flex-1 items-center justify-center" />
 
-      <div className="flex flex-1 items-center justify-end" />
+      <div className="flex flex-1 items-center justify-end">
+        <UserButton />
+      </div>
     </header>
   )
 }
