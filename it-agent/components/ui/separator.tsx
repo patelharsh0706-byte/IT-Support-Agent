@@ -17,7 +17,10 @@ function Separator({
       decorative={decorative}
       orientation={orientation}
       className={cn(
-        "shrink-0 bg-border data-horizontal:h-px data-horizontal:w-full data-vertical:w-px data-vertical:self-stretch",
+        // Radix sets `data-orientation="horizontal"|"vertical"`, not boolean
+        // `data-horizontal`/`data-vertical` attributes — those bare variants
+        // never matched. Uses `data-[orientation=...]:` instead.
+        "shrink-0 bg-border data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:w-px data-[orientation=vertical]:self-stretch",
         className
       )}
       {...props}

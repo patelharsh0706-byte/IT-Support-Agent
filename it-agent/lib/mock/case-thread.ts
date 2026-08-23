@@ -53,9 +53,19 @@ export function buildCaseThread(grievanceCase: GrievanceCase): CaseThreadMessage
   ]
 }
 
+/**
+ * Latest activity across every source on the case — the thread, tool
+ * calls, and severity changes — not just the last message. A severity
+ * change or tool call can happen after the last customer post.
+ */
 export function caseLastActivityAt(grievanceCase: GrievanceCase): string {
-  const thread = buildCaseThread(grievanceCase)
-  return thread[thread.length - 1]?.timestamp ?? grievanceCase.createdAt
+  const timestamps = [
+    ...buildCaseThread(grievanceCase).map((m) => m.timestamp),
+    ...grievanceCase.toolCallLog.map((e) => e.timestamp),
+    ...grievanceCase.severityHistory.map((s) => s.changedAt),
+  ]
+  if (timestamps.length === 0) return grievanceCase.createdAt
+  return timestamps.reduce((latest, ts) => (ts > latest ? ts : latest))
 }
 
 export function casePreviewText(grievanceCase: GrievanceCase): string {

@@ -42,6 +42,7 @@ export function EditorNavbar({
           size="icon"
           onClick={onToggleSidebar}
           aria-controls={sidebarId}
+          aria-expanded={isSidebarOpen}
           aria-label={isSidebarOpen ? "Close tickets" : "Open tickets"}
           className="text-chrome-foreground hover:bg-chrome-foreground/10 hover:text-chrome-foreground"
         >

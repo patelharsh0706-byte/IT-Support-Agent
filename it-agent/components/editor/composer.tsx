@@ -36,6 +36,10 @@ export function Composer({ onSend, disabled, className }: ComposerProps) {
           value={value}
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
+            // isComposing / keyCode 229 = an IME (e.g. Japanese, Chinese,
+            // Korean input) is mid-composition; that Enter confirms the
+            // composition, it isn't a submit.
+            if (event.nativeEvent.isComposing || event.keyCode === 229) return
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault()
               handleSend()

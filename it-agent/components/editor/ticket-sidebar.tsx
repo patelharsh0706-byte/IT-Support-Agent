@@ -103,7 +103,12 @@ export function TicketSidebar({
       </ScrollArea>
 
       <div className="shrink-0 border-t border-border p-3">
-        <Button type="button" className="w-full" onClick={onNewTicket}>
+        <Button
+          type="button"
+          className="w-full"
+          onClick={onNewTicket}
+          disabled={!onNewTicket}
+        >
           <Plus />
           New Ticket
         </Button>

@@ -23,6 +23,9 @@ export function ConversationPane({ grievanceCase }: ConversationPaneProps) {
     buildCaseThread(grievanceCase)
   )
   const [isContextOpen, setIsContextOpen] = useState(true)
+  // Resolved is distinct from replyState: resolving a case doesn't send a
+  // reply, and sending a reply doesn't resolve the case.
+  const [isResolved, setIsResolved] = useState(grievanceCase.replyState === "replied")
 
   function handleSend(text: string) {
     setMessages((prev) => [
@@ -56,8 +59,11 @@ export function ConversationPane({ grievanceCase }: ConversationPaneProps) {
   }
 
   function handleResolve() {
-    setReplyState("replied")
-    setContactedByCsrName((prev) => prev ?? currentCsrName)
+    setIsResolved(true)
+  }
+
+  function handleMarkUnattended() {
+    setReplyState("needs_reply")
   }
 
   return (
@@ -65,10 +71,11 @@ export function ConversationPane({ grievanceCase }: ConversationPaneProps) {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ConversationHeader
           grievanceCase={grievanceCase}
-          replyState={replyState}
+          isResolved={isResolved}
           isContextOpen={isContextOpen}
           onToggleContext={() => setIsContextOpen((open) => !open)}
           onResolve={handleResolve}
+          onMarkUnattended={handleMarkUnattended}
         />
         <ConversationThread messages={messages} />
         <ReplyComposer

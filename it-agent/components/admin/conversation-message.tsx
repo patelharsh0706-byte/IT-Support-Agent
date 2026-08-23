@@ -19,7 +19,10 @@ export function ConversationMessage({ message }: ConversationMessageProps) {
         <div className="flex max-w-md items-start gap-2 rounded-lg bg-state-pending/10 px-3 py-2 text-[13px] text-state-pending">
           <Lock className="mt-0.5 size-3.5 shrink-0" />
           <div>
-            <p>{message.body}</p>
+            <p>
+              <span className="sr-only">Private note: </span>
+              {message.body}
+            </p>
             <p className="mt-0.5 text-[11px] opacity-80">
               {message.authorName} · {timeFormatter.format(new Date(message.timestamp))}
             </p>

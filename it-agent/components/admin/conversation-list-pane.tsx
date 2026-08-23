@@ -46,8 +46,11 @@ export function ConversationListPane({ cases }: ConversationListPaneProps) {
   const assignmentCounts = countByAssignment(cases, filters)
   const title = filters.channel ? channelMeta[filters.channel].label : viewLabel[filters.view]
 
+  // Only used for channel/assignment changes — the open conversation may not
+  // belong to the new filter, so selection is intentionally cleared here.
+  // The sort toggle below builds its own href and preserves selectedId.
   function goTo(nextFilters: Parameters<typeof buildConversationsHref>[0]) {
-    router.push(buildConversationsHref({ ...filters, ...nextFilters }, selectedId ?? undefined))
+    router.push(buildConversationsHref({ ...filters, ...nextFilters }))
   }
 
   return (

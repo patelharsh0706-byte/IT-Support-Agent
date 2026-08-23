@@ -11,7 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { channelMeta } from "@/lib/mock/channels"
-import type { GrievanceCase, ReplyState } from "@/lib/mock/types"
+import type { GrievanceCase } from "@/lib/mock/types"
 import { cn } from "@/lib/utils"
 
 function initials(name: string) {
@@ -25,21 +25,21 @@ function initials(name: string) {
 
 interface ConversationHeaderProps {
   grievanceCase: GrievanceCase
-  replyState: ReplyState
+  isResolved: boolean
   isContextOpen: boolean
   onToggleContext: () => void
   onResolve: () => void
+  onMarkUnattended: () => void
 }
 
 export function ConversationHeader({
   grievanceCase,
-  replyState,
+  isResolved,
   isContextOpen,
   onToggleContext,
   onResolve,
+  onMarkUnattended,
 }: ConversationHeaderProps) {
-  const isResolved = replyState === "replied"
-
   return (
     <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-surface px-4">
       <div className="flex min-w-0 items-center gap-2.5">
@@ -103,7 +103,9 @@ export function ConversationHeader({
             >
               Copy case ID
             </DropdownMenuItem>
-            <DropdownMenuItem>Mark as unattended</DropdownMenuItem>
+            <DropdownMenuItem onClick={onMarkUnattended}>
+              Mark as unattended
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

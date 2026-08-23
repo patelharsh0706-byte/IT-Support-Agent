@@ -10,8 +10,12 @@ const dateFormatter = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 })
 
+// Local calendar-day key. Using `timestamp.slice(0, 10)` would group by the
+// UTC date while the label below renders in local time — the two can
+// disagree near midnight in timezones behind/ahead of UTC.
 function dateKey(timestamp: string) {
-  return timestamp.slice(0, 10)
+  const d = new Date(timestamp)
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 }
 
 interface ConversationThreadProps {
@@ -39,7 +43,7 @@ export function ConversationThread({ messages, className }: ConversationThreadPr
             <div className="flex items-center gap-3 py-3">
               <Separator className="flex-1" />
               <span className="shrink-0 text-[13px] text-muted-foreground">
-                {dateFormatter.format(new Date(group.date))}
+                {dateFormatter.format(new Date(group.messages[0].timestamp))}
               </span>
               <Separator className="flex-1" />
             </div>
