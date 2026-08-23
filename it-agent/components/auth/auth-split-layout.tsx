@@ -57,7 +57,7 @@ export function AuthSplitLayout({ children, badge, footnote }: AuthSplitLayoutPr
         </ul>
       </div>
 
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-base px-4 py-10">
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-canvas px-4 py-10">
         {badge}
         {children}
         {footnote ? (
