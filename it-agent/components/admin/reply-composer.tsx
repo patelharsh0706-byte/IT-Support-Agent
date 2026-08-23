@@ -69,34 +69,37 @@ export function ReplyComposer({
         </div>
 
         <TabsContent value="reply" className="mt-3">
-          {replyState === "replied" ? (
-            <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
-              <CheckCircle2 className="size-4 text-state-success" />
-              Sent{contactedByCsrName ? ` by ${contactedByCsrName}` : ""}.
-            </p>
-          ) : replyState === "escalated" ? (
-            <p className="text-[13px] text-muted-foreground">
-              Escalated — reply from the assigned CSR once resolved.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-3">
-              <Textarea
-                value={replyDraft}
-                onChange={(event) => setReplyDraft(event.target.value)}
-                placeholder="Draft a reply…"
-                className="min-h-24"
-              />
-              <Button
-                type="button"
-                className="self-end"
-                disabled={replyDraft.trim().length === 0}
-                onClick={() => onSend(replyDraft.trim())}
-              >
-                <SendHorizontal data-icon="inline-start" />
-                Send
-              </Button>
-            </div>
-          )}
+          <div className="flex flex-col gap-3">
+            {replyState === "replied" ? (
+              <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
+                <CheckCircle2 className="size-4 text-state-success" />
+                Sent{contactedByCsrName ? ` by ${contactedByCsrName}` : ""}. You can still
+                send a follow-up below.
+              </p>
+            ) : replyState === "escalated" ? (
+              <p className="text-[13px] text-muted-foreground">
+                Escalated. You can still reply below.
+              </p>
+            ) : null}
+            <Textarea
+              value={replyDraft}
+              onChange={(event) => setReplyDraft(event.target.value)}
+              placeholder="Draft a reply…"
+              className="min-h-24"
+            />
+            <Button
+              type="button"
+              className="self-end"
+              disabled={replyDraft.trim().length === 0}
+              onClick={() => {
+                onSend(replyDraft.trim())
+                setReplyDraft("")
+              }}
+            >
+              <SendHorizontal data-icon="inline-start" />
+              Send
+            </Button>
+          </div>
         </TabsContent>
 
         <TabsContent value="note" className="mt-3">
