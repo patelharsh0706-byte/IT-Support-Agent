@@ -69,10 +69,10 @@ change.
     states and `New Project` all present in the emitted HTML) and was then
     removed. Compiled CSS shows every new utility resolving to a token —
     no hardcoded hex in feature code.
-  - **Scope note:** this unit's project-sidebar (My Projects / Shared
-    tabs) does not map onto the Amex framing or either active plan. Kept
-    dormant rather than deleted; do not build on top of it without
-    confirming it still belongs.
+  - **Scope note (resolved 2026-08-23):** this unit's project-sidebar (My
+    Projects / Shared tabs) did not map onto the Amex framing. It was
+    deleted and repurposed as `ticket-sidebar.tsx` — see the
+    `04-project-dialogs` entry below.
 
 - **03-auth (Clerk)** — auth layer, replacing the earlier Credentials-provider design
   - **Plan change 2026-08-22:** auth moved from Auth.js (NextAuth) Credentials
@@ -125,6 +125,200 @@ change.
     internal `customer_id` instead of stopping at the Clerk user id; the
     CSR console itself (`app/admin/page.tsx` and beyond) is a separate unit.
 
+- **04-project-dialogs — customer & admin dashboard UI (mock data only)**
+  - Scope: visual layer only, per the spec's "No API calls or persistence
+    yet." No `app/api/*` routes, no DB — all state is fixture data in
+    `lib/mock/fixtures.ts` (typed via `lib/mock/types.ts`) plus local
+    React state, so nothing survives a refresh.
+  - shadcn primitives added via CLI: `select`, `checkbox`, `avatar`,
+    `separator`, `badge`, `skeleton` (the ones flagged missing under
+    `01-design-system`).
+  - `components/shared/` — `activity-event-row.tsx` and
+    `activity-panel.tsx` implement the 4-status activity vocabulary
+    (`running`/`ok`/`failed`/`denied`); shared by the customer Agent
+    Activity panel and the admin case-detail tool-call log.
+    `severity-badge.tsx` / `priority-badge.tsx` reuse the existing 3
+    state tokens (no dedicated severity/priority palette exists yet —
+    confirmed with the user rather than inventing new tokens).
+    `denied` gets a muted icon treatment, not a 4th color, since
+    `ui-context.md` only defines 3 status colors.
+  - Customer dashboard (`/editor`): `ticket-sidebar.tsx` replaces the
+    dormant `project-sidebar.tsx` (same slide-in-overlay mechanics,
+    renamed Projects → Tickets); `chat-header.tsx`, `message-list.tsx` /
+    `message-item.tsx`, `composer.tsx`, and `agent-activity-panel.tsx`
+    (the right-column activity stream) are new. `EditorNavbar`'s
+    aria-labels updated from "projects" to "tickets" to match. Ticket
+    selection, sending a message, and creating a ticket (via the reused
+    `EditorDialog`) are all local `useState`, not persisted.
+  - Admin dashboard: new `AdminNavbar` (Queue/Dashboard nav, same dark
+    chrome as `EditorNavbar`) plus three routes — `/admin/grievances`
+    (queue, priority-band-then-age sorted, mixing `channel: "chat"` and
+    `channel: "social"` cases per `project-overview.md`),
+    `/admin/grievances/[id]` (case detail: clocks, dedupe history,
+    severity history, tool-call log, reply composer), and
+    `/admin/grievances/dashboard` (4 metric tiles, headline = customers
+    whose account closed while a grievance sat open). `app/admin/page.tsx`
+    is a plain `redirect("/admin/grievances")`.
+  - Verified: `npx tsc --noEmit`, `npm run lint`, `npm run build` all
+    clean. Visually verified via a temporary Playwright script against
+    the dev server (chromium-cli wasn't available in this environment) —
+    all 4 activity statuses and 3 terminal states, both dashboards, ticket
+    creation/selection, and the reply-composer send flow all confirmed
+    working. `proxy.ts` was temporarily edited to exempt the routes under
+    test (no test auth session was available) and fully reverted before
+    finishing — confirmed via `git diff proxy.ts` showing no changes, and
+    a final `curl` check confirming `/editor` and `/admin/grievances`
+    both still redirect unauthenticated requests to sign-in.
+  - **Not done in this unit:** no real severity/priority design tokens
+    (open decision, currently reusing the 3 state tokens); no backend —
+    all four dashboards' data is fixture-only.
+  - **Superseded by the two entries below** — the routes and `AdminNavbar`
+    described here (`/editor`, `/admin/grievances` as the CSR landing
+    page) were renamed and restructured on 2026-08-23.
+
+- **Route rename — `/customer/*` and `/admin/*` split (2026-08-23)**
+  - Fixed a real confusion bug: customer and CSR sign-in shared the same
+    generic `AuthSplitLayout` shell with only a small badge/footnote
+    telling them apart, and both roles could end up looking at what
+    read as "the same dashboard" because CSR accounts had no role
+    metadata set yet (see below).
+  - `/sign-in` → `/customer/sign-in`; `/editor` → `/customer/dashboard`;
+    the CSR landing page changed from `/admin/grievances` to
+    `/admin/dashboard` (later relocated again, see the Chatwoot entry).
+    `proxy.ts`'s public-route matcher and unauthenticated redirect
+    target updated to match; `NEXT_PUBLIC_CLERK_SIGN_IN_URL` updated in
+    `.env.local`/`.env.example` (both gitignored by the repo's blanket
+    `.env*` rule, so this does not propagate to other checkouts —
+    flagged to the user, not yet fixed).
+  - Root cause of "both dashboards look the same": neither Clerk test
+    account (`patelharsh0706@gmail.com`, `killer.master502@gmail.com`)
+    had `publicMetadata.role` set, so `role === "csr"` was never true
+    and every sign-in fell through to `/customer/dashboard`. Fixed via
+    `clerk api /users/{id}/metadata -X PATCH` (note: PATCH must target
+    `/users/{id}/metadata`, not `/users/{id}` with a `public_metadata`
+    body — the latter is a deprecated, silently-rejected parameter as
+    of Clerk's current Backend API). `patelharsh0706@gmail.com` is now
+    `csr`, `killer.master502@gmail.com` is `customer`.
+  - `app/admin/page.tsx` — a non-CSR session signing in through
+    `/admin/sign-in` previously redirected silently to the customer
+    dashboard with no explanation. It's now a role-aware landing page:
+    `csr` redirects straight through, anyone else sees a "This isn't a
+    CSR account" card with links back to their own dashboard or to
+    re-sign-in as CSR. `proxy.ts`'s admin gate was adjusted so `/admin`
+    itself (only) is reachable by any signed-in user for this purpose;
+    every real admin surface below it stays 404-gated for non-CSR
+    sessions, so the console is still never advertised.
+  - Verified via minted Clerk session tokens decoded locally (not a
+    full browser sign-in — the dev-instance `accounts.dev` ↔ localhost
+    handshake defeated headless automation) plus `curl` checks that
+    unauthenticated requests to both new sign-in paths still redirect
+    correctly.
+
+- **Chatwoot-style CSR console restructure (2026-08-23)**
+  - Reorganized the admin dashboard from three disconnected full-page
+    routes (queue table, case-detail page, metrics page, each
+    re-declaring its own navbar) into a persistent multi-pane console:
+    left nav rail, middle conversation list, right conversation pane
+    with a pinned reply/private-note composer and a collapsible case
+    context sidebar — modeled on a Chatwoot screenshot the user
+    supplied. Content is unchanged; this is a chrome reorganization.
+  - Route group `app/admin/(console)/layout.tsx` wraps the rail around
+    everything except `/admin` (the role-mismatch card) and
+    `/admin/sign-in` (Clerk's split layout). New routes:
+    `/admin/conversations` (empty state), `/admin/conversations/[id]`
+    (the conversation pane), `/admin/reports/dashboard` (the old
+    4-metric page, content unchanged), `/admin/reports/grievances` (the
+    old queue table, content unchanged, kept per explicit user request
+    rather than deleted). `app/admin/page.tsx`'s CSR redirect now points
+    at `/admin/conversations`.
+  - List/filter logic centralized in `lib/admin/conversation-views.ts`:
+    filters are **query params** (`?view=`, `?channel=`, `?assignment=`,
+    `?q=`), selection is the `[id]` path segment — deliberately not a
+    sibling route per filter, so switching filters never unmounts the
+    open conversation (only `useSearchParams()` changes). `Unattended`
+    = `replyState === "needs_reply"`; `Participating` =
+    `contactedByCsrName !== null`; `Mentions` has no backing data and is
+    an intentional empty state; queue sort order (severity band, then
+    oldest-first) is now defined once here and reused by both the
+    conversation list and the retained queue table.
+  - `CaseChannel` widened from `"chat" | "social"` to `"amex_support" |
+    "social" | "website_chatbot"` (`lib/mock/channels.ts` is the single
+    label/icon source); the 4 fixture cases were re-tagged across all
+    three channels and given `customerName`/`customerHandle` fields
+    (invented display identities, not real customers). No message
+    thread existed on `GrievanceCase` before this — `lib/mock/case-thread.ts`
+    builds one from `dedupePosts` (real per-case data) and synthesizes a
+    single opening message from `summary` for the two cases that had no
+    posts, so a thread is never empty. That function is the documented
+    single swap point for real message data later. `currentCsrName`
+    (`lib/mock/current-csr.ts`, `"J. Alvarez"`) is the one piece of
+    invented data in this unit, needed to make the "Mine" filter
+    demonstrable — confined to one file, swaps for the real Clerk
+    session identity later.
+  - Deleted: `admin-navbar.tsx`, `case-detail.tsx` (decomposed into
+    `conversation-pane/header/thread/message/context-sidebar.tsx`).
+    Kept and adapted: `grievance-queue.tsx`/`queue-row.tsx` (now read
+    channel icons from `lib/mock/channels.ts`, link into
+    `/admin/conversations/[id]` instead of the deleted
+    `/admin/grievances/[id]`, share a grid-template constant via
+    `lib/admin/queue-grid.ts` instead of duplicating it).
+    `reply-composer.tsx` extended in place with Reply/Private Note tabs
+    (`components/ui/tabs`) rather than replaced — the Private Note tab
+    has no send path in any reply state, same no-auto-send guarantee as
+    the Reply tab. Added shadcn `collapsible`, `dropdown-menu`,
+    `tooltip` via the CLI (all already inside the `radix-ui` umbrella
+    dependency, no new npm installs); `TooltipProvider` added to
+    `app/layout.tsx` root as the CLI's post-install step requires.
+  - Fixed two latent bugs surfaced while building this, both real and
+    pre-existing (not new): `text-accent-primary` was used in
+    `app/admin/dashboard/page.tsx` and `case-detail.tsx` but no
+    `--color-accent-primary` alias exists in `globals.css`'s `@theme
+    inline` block, so the class silently did nothing — replaced with
+    `text-primary` everywhere it survived. More significantly: Radix's
+    `ScrollAreaPrimitive.Viewport` wraps its children in an inline
+    `style="min-width:100%;display:table"` div for scroll-size
+    measurement; `display:table` sizes to content's max-content width,
+    so any `ScrollArea` containing `truncate`/nowrap text (the
+    tool-call-log detail lines, badge labels) could silently force
+    itself wider than its container and get clipped by an ancestor's
+    `overflow-hidden` — invisible to the user, not just cosmetically
+    truncated. This was latent in `components/shared/activity-panel.tsx`
+    since it was first built, just never triggered because it always
+    had enough width before. Fixed once, globally, in `app/globals.css`:
+    `[data-slot="scroll-area-viewport"] > div { display: block
+    !important; }` (an inline style can only be overridden by
+    `!important` in a stylesheet — this could not be fixed at
+    individual call sites). Confirmed fixed by walking the DOM ancestor
+    chain with `getComputedStyle` in a headless browser, not just by
+    re-screenshotting.
+  - Verified: `tsc`/`lint`/`build` clean; every conversation view/filter
+    combination, both Reports pages, all 4 fixture cases' conversation
+    panes (including the two synthesized-thread cases), the private-note
+    and reply-send flows, and the context-sidebar toggle all visually
+    confirmed via a temporary `proxy.ts` exemption (reverted and
+    confirmed via `git diff proxy.ts` returning empty each time) plus a
+    zero-console-errors check on every navigation. `/customer/dashboard`
+    re-screenshotted and confirmed pixel-identical — nothing under
+    `components/editor/` was touched.
+  - **Not done in this unit:** no severity/sort filter wiring beyond
+    the channel-filter dropdown and the priority/latest sort toggle in
+    the list header (both did get wired, slightly ahead of the original
+    "optional step 7" plan, since the underlying `conversation-views.ts`
+    helpers made it nearly free); still no backend, still fixture data
+    only; `currentCsrName` is still a hardcoded stand-in.
+
+- **CodeRabbit review fixes on PR #2 (2026-08-23)** — 9 of 13 actionable comments addressed; the other 4 were deliberately skipped (see below).
+  - **`conversation-pane.tsx`/`conversation-header.tsx`** — "Resolve" previously set `replyState` to `"replied"` directly, which made the composer falsely show "Sent by X" for a case nothing was ever sent on. `isResolved` is now separate local state, seeded from `replyState === "replied"` but only ever changed by the Resolve button; `ConversationHeader` takes `isResolved` as a prop instead of deriving it. "Mark as unattended" (previously an inert menu item) now calls `setReplyState("needs_reply")`.
+  - **`composer.tsx`** — Enter-to-send now checks `event.nativeEvent.isComposing` / `keyCode === 229` first, so confirming an IME composition (Japanese/Chinese/Korean input) no longer sends the message mid-composition.
+  - **`conversation-list-pane.tsx`** — switching the channel or assignment filter now clears the open conversation (`goTo` no longer threads `selectedId` through), since the previously-open case may not belong to the new filter. The sort toggle has its own handler and still preserves selection.
+  - **`case-thread.ts`** — `caseLastActivityAt` now takes the max timestamp across the thread, `toolCallLog`, and `severityHistory`, not just the last message — a severity change or tool call can be more recent than the last post (confirmed against `case_1`, where this shifts the true last-activity time by 5 minutes).
+  - **`ticket-sidebar.tsx`** — "New Ticket" button is now `disabled` when no `onNewTicket` callback is provided, instead of rendering enabled and doing nothing on click.
+  - **`components/ui/checkbox.tsx`, `components/ui/separator.tsx`** — both used bare boolean-style Tailwind variants (`data-checked:`, `data-horizontal:`/`data-vertical:`) that never matched, because Radix sets `data-state="checked"` and `data-orientation="horizontal"` respectively, not literal `data-checked`/`data-horizontal` attributes. Fixed to `data-[state=checked]:` / `data-[orientation=...]:`. These are vendored shadcn files normally left untouched, but this is a correctness fix to the generator's own output, not a customization — flagged here so a future `shadcn add --overwrite` re-run doesn't silently reintroduce it unnoticed. `Checkbox` is unused anywhere in the app today; `Separator` is used for date dividers and was not visibly broken (the rest of its class list still rendered something), so this was a real but latent bug in both cases.
+  - **`message-list.tsx`, `conversation-thread.tsx`** — date-divider grouping previously derived its key from `timestamp.slice(0, 10)` (the UTC calendar date) but rendered the header label via local-time formatting — the two could disagree near midnight depending on the viewer's timezone offset from UTC. Both the grouping key and the displayed label now derive from the same local `Date`. Verified visually: `msg_1` (`2026-08-21T16:05:00Z`, displayed as "12:05 AM") now correctly groups under "August 22" in a UTC+8 local timezone, where it previously showed "August 21" — a real header/timestamp mismatch, not just a style nit.
+  - **`editor-navbar.tsx`, `conversation-message.tsx`** — added `aria-expanded` to the ticket-sidebar toggle button, and a visually-hidden "Private note:" label before private-note message bodies so screen readers announce their internal-only status (previously conveyed by color/icon alone).
+  - **Deliberately not fixed — `proxy.ts` / simultaneous customer+admin sessions.** CodeRabbit's suggestion ("implement per-window session-token handling") isn't a real Clerk pattern — a single browser profile has one shared cookie jar across every tab/window, so two different signed-in users can never coexist there regardless of app code. The actual fix is operational, not code: use a second browser profile or an Incognito/Private window for the second role when demoing both sides at once. Already explained to and accepted by the user; no code change made.
+  - Verified: `tsc`/`lint`/`build` all clean. Each behavioral fix (1, 3, 5, and the date-divider fix) re-verified live against the dev server via a temporary `proxy.ts` exemption (reverted, confirmed via `git diff proxy.ts` returning empty) — not just re-reading the diff. `/customer/dashboard` re-screenshotted; the date shift observed there is the fix working as intended, not a regression.
+
 ## In Progress
 
 - None.
@@ -146,14 +340,16 @@ change.
   queue + case detail). S8 (dashboard) is confirmed in-scope, not
   optional — see the plan's Effort and Sequencing section before cutting
   anything under time pressure.
-- App shell layout: fixed left sidebar (~280px), flexible centre column,
-  fixed right activity panel (~480px), separated by `--border-default`
-  hairlines, per the layout patterns in `ui-context.md`.
-- Remaining shadcn primitives `ui-context.md` calls for but spec
-  `01-design-system` did not request: `select`, `checkbox`, `avatar`,
-  `separator`, `badge`, `skeleton`. Add them with the CLI when the unit
-  that needs them lands — the CSR console (queue table, severity/status
-  badges) will need several of these.
+- Wire the `04-project-dialogs` UI (now built, mock data only) to real
+  data once U1–U2 and the social-intake units land: replace
+  `lib/mock/fixtures.ts` reads in the customer dashboard and the
+  `/admin/conversations*` / `/admin/reports/*` routes with real
+  queries. `lib/mock/case-thread.ts`'s `buildCaseThread()` is the
+  single swap point for real message data; the mock types in
+  `lib/mock/types.ts` were shaped to match the target schema for this.
+- Real severity/priority design tokens: `severity-badge.tsx` /
+  `priority-badge.tsx` currently reuse the 3 existing state tokens
+  (confirmed with the user as a stopgap, not a final design decision).
 
 ## Open Questions
 

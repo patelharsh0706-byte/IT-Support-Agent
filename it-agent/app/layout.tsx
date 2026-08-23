@@ -4,6 +4,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+import { TooltipProvider } from "@/components/ui/tooltip";
+
 const clerkAppearance = {
   baseTheme: dark,
   variables: {
@@ -47,7 +49,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <ClerkProvider appearance={clerkAppearance}>
-          {children}
+          <TooltipProvider>{children}</TooltipProvider>
         </ClerkProvider>
       </body>
     </html>

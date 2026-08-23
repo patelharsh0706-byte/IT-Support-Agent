@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 interface EditorNavbarProps {
-  /** Whether the project sidebar is currently open. Drives the toggle icon. */
+  /** Whether the ticket sidebar is currently open. Drives the toggle icon. */
   isSidebarOpen: boolean
   onToggleSidebar: () => void
   /** id of the sidebar element, wired to the toggle for assistive tech. */
@@ -42,7 +42,8 @@ export function EditorNavbar({
           size="icon"
           onClick={onToggleSidebar}
           aria-controls={sidebarId}
-          aria-label={isSidebarOpen ? "Close projects" : "Open projects"}
+          aria-expanded={isSidebarOpen}
+          aria-label={isSidebarOpen ? "Close tickets" : "Open tickets"}
           className="text-chrome-foreground hover:bg-chrome-foreground/10 hover:text-chrome-foreground"
         >
           <ToggleIcon />

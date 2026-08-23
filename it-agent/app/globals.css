@@ -14,7 +14,14 @@
     --font-mono: var(--font-mono);
 
     /* Product tokens — see context/ui-context.md */
-    --color-base: var(--bg-base);
+    /* NOT named --color-base: Tailwind v4 generates a same-named
+       `text-base`/`bg-base`/etc. utility per --color-* key, and "base" is
+       also Tailwind's own reserved font-size scale step. That collision
+       silently replaced the built-in `text-base` font-size utility with a
+       `color: var(--bg-base)` rule — every Input/Textarea (which use
+       `text-base` for the standard 16px/mobile-safe size) rendered text in
+       the near-white page-background color, i.e. invisible. */
+    --color-canvas: var(--bg-base);
     --color-surface: var(--bg-surface);
     --color-subtle: var(--bg-subtle);
     --color-accent-soft: var(--accent-soft);
@@ -141,4 +148,17 @@
   html {
     @apply font-sans;
     }
+}
+
+/* Radix ScrollArea's Viewport wraps children in an inline
+   `style="min-width:100%;display:table"` div so it can measure the
+   content's natural size for the scrollbar thumb. `display:table` sizes
+   to content's max-content width, so nowrap/truncated text inside a
+   ScrollArea can silently force it wider than its container and get
+   clipped by an ancestor's overflow-hidden. Only `!important` can win
+   against an inline style, so this lives here rather than at each call
+   site — it restores normal block sizing/wrapping without breaking
+   vertical scroll measurement. */
+[data-slot="scroll-area-viewport"] > div {
+  display: block !important;
 }

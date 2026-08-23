@@ -21,7 +21,7 @@ export default function CSRSignInPage() {
         <>
           Not a CSR?{" "}
           <Link
-            href="/sign-in"
+            href="/customer/sign-in"
             className="font-medium text-primary underline-offset-4 hover:underline"
           >
             Sign in as customer
@@ -30,8 +30,14 @@ export default function CSRSignInPage() {
       }
     >
       {/* CSR accounts are provisioned by an admin (Clerk Dashboard / `clerk
-          users`), never self-registered — the sign-up prompt is hidden. */}
-      <SignIn appearance={{ elements: { footerAction: { display: "none" } } }} />
+          users`), never self-registered — the sign-up prompt is hidden.
+          Lands on `/admin` rather than `/` so a non-CSR signing in through
+          this door gets told why, instead of being silently redirected to
+          the customer dashboard. */}
+      <SignIn
+        fallbackRedirectUrl="/admin"
+        appearance={{ elements: { footerAction: { display: "none" } } }}
+      />
     </AuthSplitLayout>
   );
 }
