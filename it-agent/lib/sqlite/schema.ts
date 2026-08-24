@@ -40,13 +40,15 @@ export const serviceRequests = sqliteTable("service_request", {
   channel: text("channel", {
     enum: ["amex_support", "social", "website_chatbot"],
   }).notNull(),
+  // Nullable: a customer-created request exists before classification runs
+  // (`lib/agent/classify.ts`, not built yet) — see `06-project-api.md`.
   intent: text("intent", {
     enum: [
       "card_unblock_activation",
       "unrecognized_transaction",
       "update_contact_info",
     ],
-  }).notNull(),
+  }),
   title: text("title").notNull(),
   priority: text("priority", { enum: ["low", "medium", "high"] }).notNull(),
   status: text("status", {

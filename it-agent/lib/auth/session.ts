@@ -10,8 +10,9 @@ function getRole(sessionClaims: Awaited<ReturnType<typeof auth>>["sessionClaims"
 /**
  * Resolves the authenticated Clerk user. Throws when unauthenticated.
  *
- * Returns the Clerk user id — once U2 lands, this will look up and return
- * the internal `customer_id` via `customers.clerk_user_id` instead.
+ * Returns the Clerk user id and role only. To resolve the internal
+ * `customer_id` (via `customers.clerk_user_id`), pass `clerkUserId` to
+ * `resolveCustomer()` in `lib/sqlite/queries.ts`.
  */
 export async function requireCustomer() {
   const { userId, sessionClaims } = await auth();

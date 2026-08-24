@@ -34,6 +34,7 @@ If a future unit needs a genuinely different shape — parallel sub-agent fan-ou
 
 - `app/` — routes, pages, and API route handlers
 - `app/api/chat/` — receives chat requests, runs the AI SDK agent loop, streams responses + tool activity
+- `app/api/service-requests/`, `app/api/service-requests/[serviceRequestId]/` — list/create/rename/delete a customer's own service requests (not agent-classified; `intent` is null until `lib/agent/classify.ts` runs), scoped to the authenticated customer
 - `app/api/social/sweep/` — authenticated endpoint that ingests, triages, and dedupes social grievances into `service_request`
 - `app/api/grievances/[id]/reply/` — records a CSR-sent reply; there is no code path that sends without an explicit human action
 - `app/sign-in/`, `app/sign-up/` — Clerk-hosted auth screens, the customer door (self-serve)

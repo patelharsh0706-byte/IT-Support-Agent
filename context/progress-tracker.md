@@ -360,6 +360,50 @@ change.
     must be live queries, never stored counters) — deferred to whoever
     wires `04-project-dialogs` to real data.
 
+- **06-project-api — service-request CRUD API routes**
+  - `feature-specs/06-project-api.md` was pasted as a generic "Project"
+    CRUD example (list/create/rename/delete, `ownerId`); there is no
+    `projects` table in this app. Confirmed with the user and rewritten
+    onto the real entity: `service_request`, the table shared by
+    customer tickets and CSR grievance cases.
+  - `app/api/service-requests/route.ts` (`GET` list, `POST` create) and
+    `app/api/service-requests/[serviceRequestId]/route.ts` (`PATCH`
+    rename, `DELETE`) — customer-scoped only; no CSR/admin surface here.
+  - `lib/sqlite/queries.ts` (new) — `resolveCustomer()` finds the
+    `customers` row for the signed-in Clerk user by `clerk_user_id`, or
+    provisions one from the Clerk profile on first request (no seeded
+    customer had `clerk_user_id` set, and this was already the
+    documented U2 follow-up blocker — see Architecture Decisions).
+    `listServiceRequestsForCustomer`, `createServiceRequest`,
+    `getServiceRequestById`, `renameServiceRequest`,
+    `deleteServiceRequest` round out the CRUD.
+  - `lib/sqlite/schema.ts` — `service_request.intent` changed from
+    `NOT NULL` to nullable: a customer-created request exists before
+    classification runs (`lib/agent/classify.ts`, not built yet), so it
+    genuinely has no intent yet. Migration
+    `lib/sqlite/migrations/0001_tough_eddie_brock.sql` generated and
+    applied.
+  - `proxy.ts` — unauthenticated requests to `/api/*` now get a JSON
+    `401` instead of a `307` redirect to the sign-in page (a redirect is
+    not a usable response for a fetch client). Page routes are
+    unaffected; verified `/customer/dashboard` and `/admin/conversations`
+    still redirect as before.
+  - IDs: `tkt_` + `crypto.randomUUID()` for new service requests,
+    `cust_` + `crypto.randomUUID()` for auto-provisioned customers —
+    matches the existing prefix convention, no sequential IDs.
+  - Verified: `npx tsc --noEmit`, `npm run lint`, `npm run build` all
+    clean. All four routes curl-tested against the dev server —
+    unauthenticated `GET`/`POST`/`PATCH`/`DELETE` all return `401` JSON.
+    Owner/not-found checks additionally verified live against a real
+    signed-in Clerk session (2026-08-25): auto-provisioning confirmed in
+    Drizzle Studio (`customers` row created with real `clerk_user_id`,
+    name, email from the Clerk profile on first request), create/rename/
+    delete round-tripped on the user's own ticket, renaming someone
+    else's seeded ticket (`tkt_1`, owned by `cust_you`) returned `403`,
+    and deleting a nonexistent id returned `404`.
+  - **Not done in this unit:** UI is not wired to these routes (per
+    spec, "Keep this backend-only").
+
 ## In Progress
 
 - None.
@@ -370,14 +414,17 @@ change.
   `lib/agent/classify.ts` (LLM classify call), `lib/agent/pipeline.ts`
   (deterministic priority → route → execute → verify), and
   `app/api/chat/route.ts` (the streaming chat route tying both together),
-  built against the schema seeded in `lib/sqlite/`. Session/auth wiring
-  (below) should land alongside or just before this, since the pipeline
-  needs a real `customer_id`.
+  built against the schema seeded in `lib/sqlite/`. Resolving a real
+  `customer_id` from the Clerk session is no longer a blocker —
+  `resolveCustomer()` in `lib/sqlite/queries.ts` (added in 06-project-api)
+  does this and can be reused directly.
 - **03-auth (rest)** — Clerk sign-in/sign-up, role-based routing, and the
-  `proxy.ts` gate are done. `customers.clerk_user_id` now exists in the
-  schema (nullable) but is not yet populated or read anywhere —
-  `lib/auth/session.ts` still stops at the Clerk user id rather than
-  resolving an internal `customer_id`. Next step is linking the two.
+  `proxy.ts` gate are done. `customers.clerk_user_id` linkage is now
+  implemented as `resolveCustomer()` in `lib/sqlite/queries.ts` (find by
+  `clerk_user_id`, or provision from the Clerk profile on first request) —
+  used by the `06-project-api` routes. `lib/auth/session.ts` itself is
+  unchanged and still only resolves the Clerk user id/role; callers that
+  need an internal `customer_id` call `resolveCustomer()` with it.
 - **Social grievance intake** (`docs/plans/2026-08-22-001-…`) — the data
   layer it needed (`social_posts`, `severity_changes` on
   `service_request`) now exists; still blocked on the classifier (U5).
@@ -495,6 +542,25 @@ change.
   authenticated session claiming it. The agent drafts replies; only a
   human CSR sends — no auto-send path exists at any configuration. See
   `docs/plans/2026-08-22-001-feat-social-grievance-intake-plan.md`.
+- **Customer auto-provisioning on first API request, 2026-08-24.** No
+  seeded `customers` row has `clerk_user_id` set, so `resolveCustomer()`
+  (`lib/sqlite/queries.ts`) creates one from the Clerk profile
+  (email/name) the first time a signed-in customer hits an authenticated
+  route, rather than failing closed until someone manually links the
+  Clerk user to a seed row. Chosen so real sign-ins work out of the box;
+  does not touch invariant 1 (the created row is keyed to that same
+  session's `clerk_user_id`, never a client-supplied id).
+- **`service_request.intent` is nullable, 2026-08-24.** Was `NOT NULL`
+  since `05-sqlite`, but a customer creating their own ticket via
+  `06-project-api`'s routes has not been classified yet — `intent` is
+  the classifier's job (`lib/agent/classify.ts`, not built), distinct
+  from `classification_intent` which already was nullable. Migration
+  `0001_tough_eddie_brock.sql`.
+- **`proxy.ts` returns JSON `401` for unauthenticated `/api/*` requests
+  instead of redirecting, 2026-08-24.** The existing behavior (redirect
+  to the sign-in page) was written for page navigation; a fetch client
+  hitting an API route needs a real status code, not a `307` to HTML.
+  Page routes are unaffected — only the `/api/*` branch changed.
 
 ## Session Notes
 
