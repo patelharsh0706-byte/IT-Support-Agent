@@ -41,7 +41,7 @@ If a future unit needs a genuinely different shape — parallel sub-agent fan-ou
 - `app/editor/` — the customer-facing landing surface (chat interface lands here once built)
 - `app/admin/grievances/` — the CSR console: queue, case detail, dashboard
 - `lib/auth/` — session accessors (`requireCustomer()`, `requireCSR()`) that resolve the Clerk session and enforce role
-- `lib/db/` — Drizzle schema, client, and seed data
+- `lib/sqlite/` — Drizzle schema, client, and seed data
 - `lib/tools/` — the servicing tool functions, each declared into exactly one intent's capability scope
 - `lib/agent/` — the classification stage, the deterministic pipeline (priority → route → execute → verify), and the capability/authorization gate
 - `lib/channels/` — the social channel adapter interface and fixture implementation

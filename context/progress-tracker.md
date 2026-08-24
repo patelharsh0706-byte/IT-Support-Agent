@@ -15,8 +15,9 @@ change.
   `context/architecture.md`, and `feature-specs/03-auth.md` are rewritten for
   the new framing; `docs/plans/2026-08-14-001-…` (backend spine) and
   `docs/plans/2026-08-22-001-…` (social grievance intake) are the two active
-  plans. Nothing in `it-agent/lib/` implements either yet — vocabulary and
-  UI-layer work only so far.
+  plans. The data layer (U1–U2) now exists — see Completed below. Next is
+  the agent pipeline itself: `lib/agent/classify.ts`, `lib/agent/pipeline.ts`,
+  and `app/api/chat/route.ts`, wired to the schema just seeded.
 
 ## Completed
 
@@ -319,34 +320,79 @@ change.
   - **Deliberately not fixed — `proxy.ts` / simultaneous customer+admin sessions.** CodeRabbit's suggestion ("implement per-window session-token handling") isn't a real Clerk pattern — a single browser profile has one shared cookie jar across every tab/window, so two different signed-in users can never coexist there regardless of app code. The actual fix is operational, not code: use a second browser profile or an Incognito/Private window for the second role when demoing both sides at once. Already explained to and accepted by the user; no code change made.
   - Verified: `tsc`/`lint`/`build` all clean. Each behavioral fix (1, 3, 5, and the date-divider fix) re-verified live against the dev server via a temporary `proxy.ts` exemption (reverted, confirmed via `git diff proxy.ts` returning empty) — not just re-reading the diff. `/customer/dashboard` re-screenshotted; the date shift observed there is the fix working as intended, not a regression.
 
+- **05-sqlite (U1–U2 of the orchestration plan) — Drizzle/SQLite data layer**
+  - Rewrote `feature-specs/05-sqlite.md` from stale Prisma/Postgres content
+    (leftover from before the Amex repackaging) into a table-by-table
+    mapping of the existing mock types (`Ticket`, `ChatMessage`,
+    `GrievanceCase`, `ActivityEvent`, `DashboardMetrics` in
+    `lib/mock/types.ts`) onto real tables, so seeding is a port, not a
+    redesign.
+  - Installed `drizzle-orm`, `@libsql/client`, `drizzle-kit`, `tsx`. All
+    database code lives under `it-agent/lib/sqlite/` (schema, client,
+    seed, and `drizzle.config.ts` all together, per explicit user
+    request — not split across `lib/db/` + a root config file).
+  - `lib/sqlite/schema.ts` — 8 tables: `customers`, `cards`,
+    `service_request` (shared by chat tickets and grievance cases,
+    `channel` tells them apart, `customer_id` nullable for an unclaimed
+    social case), `social_posts`, `severity_changes`, `chat_sessions`,
+    `chat_messages`, `agent_actions` (shared audit table for both chat
+    activity events and grievance tool-call logs — exactly one of
+    `service_request_id` / `chat_message_id` is set per row, chosen over
+    two separate tables so a cross-channel query never needs a `UNION`).
+  - `lib/sqlite/client.ts` — one libSQL client for both environments: a
+    `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` connection when set, else a
+    local `file:local.db` (gitignored) for dev — same client either way,
+    not a different fallback path. Cached on `global` in development.
+  - `lib/sqlite/seed.ts` — ports `lib/mock/fixtures.ts` row-for-row:
+    6 tickets + 4 grievance cases → 10 `service_request` rows, their
+    `activityEvents`/`toolCallLog` → 10 `agent_actions` rows, plus 5
+    `customers` (including one seeded `closed` with a still-open linked
+    request, so the churn-metric success criterion has real data). Safe
+    to re-run — clears every table first.
+  - `package.json` scripts: `db:generate`, `db:migrate`, `db:studio`,
+    `db:seed`, pointed at `lib/sqlite/drizzle.config.ts`.
+  - Verified: migration generated and applied cleanly; seed run twice
+    (idempotency confirmed); row counts checked directly (5 customers,
+    10 service_requests, 10 agent_actions); `npx tsc --noEmit` and
+    `npm run build` both clean.
+  - **Not done in this unit:** `lib/db/queries.ts` for the four dashboard
+    metrics (still fixture-computed, per `05-sqlite.md`'s note that these
+    must be live queries, never stored counters) — deferred to whoever
+    wires `04-project-dialogs` to real data.
+
 ## In Progress
 
 - None.
 
 ## Next Up
 
-- **U1–U2 of the orchestration plan** (`docs/plans/2026-08-14-001-…`) —
-  dependencies, env validation, and the data layer. Nothing in
-  `it-agent/lib/` exists yet: no `drizzle-orm`, no `@libsql/client`, no
-  `lib/db/`. This blocks everything below.
+- **U3+ of the orchestration plan** — the agent pipeline itself:
+  `lib/agent/classify.ts` (LLM classify call), `lib/agent/pipeline.ts`
+  (deterministic priority → route → execute → verify), and
+  `app/api/chat/route.ts` (the streaming chat route tying both together),
+  built against the schema seeded in `lib/sqlite/`. Session/auth wiring
+  (below) should land alongside or just before this, since the pipeline
+  needs a real `customer_id`.
 - **03-auth (rest)** — Clerk sign-in/sign-up, role-based routing, and the
-  `proxy.ts` gate are done. What remains is blocked on U1–U2: the
-  `customers.clerk_user_id` / `customers.role` columns, so
-  `lib/auth/session.ts` can resolve an internal `customer_id` instead of
-  stopping at the Clerk user id.
-- **Social grievance intake** (`docs/plans/2026-08-22-001-…`) — blocked on
-  the data layer and the classifier (U5). Demo-critical spine is S1
-  (channel adapter + fixtures), S2 (triage), S4 (case bridge), S5 (CSR
-  queue + case detail). S8 (dashboard) is confirmed in-scope, not
-  optional — see the plan's Effort and Sequencing section before cutting
-  anything under time pressure.
-- Wire the `04-project-dialogs` UI (now built, mock data only) to real
-  data once U1–U2 and the social-intake units land: replace
-  `lib/mock/fixtures.ts` reads in the customer dashboard and the
-  `/admin/conversations*` / `/admin/reports/*` routes with real
-  queries. `lib/mock/case-thread.ts`'s `buildCaseThread()` is the
-  single swap point for real message data; the mock types in
-  `lib/mock/types.ts` were shaped to match the target schema for this.
+  `proxy.ts` gate are done. `customers.clerk_user_id` now exists in the
+  schema (nullable) but is not yet populated or read anywhere —
+  `lib/auth/session.ts` still stops at the Clerk user id rather than
+  resolving an internal `customer_id`. Next step is linking the two.
+- **Social grievance intake** (`docs/plans/2026-08-22-001-…`) — the data
+  layer it needed (`social_posts`, `severity_changes` on
+  `service_request`) now exists; still blocked on the classifier (U5).
+  Demo-critical spine is S1 (channel adapter + fixtures), S2 (triage), S4
+  (case bridge), S5 (CSR queue + case detail). S8 (dashboard) is
+  confirmed in-scope, not optional — see the plan's Effort and Sequencing
+  section before cutting anything under time pressure.
+- Wire the `04-project-dialogs` UI (built, mock data only) to real data
+  now that `lib/sqlite/` exists: replace `lib/mock/fixtures.ts` reads in
+  the customer dashboard and the `/admin/conversations*` /
+  `/admin/reports/*` routes with real queries, and add the
+  `lib/db/queries.ts` dashboard-metrics functions noted above.
+  `lib/mock/case-thread.ts`'s `buildCaseThread()` is the single swap
+  point for real message data; the mock types in `lib/mock/types.ts`
+  were shaped to match the schema for this.
 - Real severity/priority design tokens: `severity-badge.tsx` /
   `priority-badge.tsx` currently reuse the 3 existing state tokens
   (confirmed with the user as a stopgap, not a final design decision).
@@ -434,6 +480,14 @@ change.
   called as a library from an API route, satisfies this while still being
   a real agent. Confirmed explicitly with the user rather than assumed —
   see `context/architecture.md`, Agent Architecture.
+- **Database code lives under `lib/sqlite/`, not `lib/db/`.** The
+  orchestration plan (`docs/plans/2026-08-14-001-…`) and
+  `context/architecture.md`'s System Boundaries both say `lib/db/`; the
+  user explicitly asked to keep schema, client, seed, and
+  `drizzle.config.ts` together under one folder for this build. Everything
+  the boundary rule protects ("only `lib/db/` touches the database") still
+  holds — it's just named `lib/sqlite/` instead. `context/architecture.md`'s
+  System Boundaries entry was updated to `lib/sqlite/` to match.
 - **Social grievances are a second front door onto the same pipeline, not
   a second pipeline.** A social post triages, dedupes, and opens or
   attaches to an ordinary `service_request` row with `verified: false` on
