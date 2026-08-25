@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `customers_clerk_user_id_unique` ON `customers` (`clerk_user_id`);

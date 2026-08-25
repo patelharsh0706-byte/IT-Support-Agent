@@ -403,6 +403,44 @@ change.
     and deleting a nonexistent id returned `404`.
   - **Not done in this unit:** UI is not wired to these routes (per
     spec, "Keep this backend-only").
+  - **CodeRabbit fixes on PR #3 (2026-08-25):** 6 of 9 findings addressed.
+    - `resolveCustomer()` had a real race: no unique constraint on
+      `customers.clerk_user_id`, so two concurrent requests from the same
+      new sign-in could each insert a separate customer row. Added a
+      `uniqueIndex` on `clerk_user_id` (migration
+      `0002_outgoing_gravity.sql`, NULLs stay distinct per SQLite so
+      seeded rows without one are unaffected) and made the insert
+      conflict-safe (`onConflictDoNothing` + re-fetch the winner).
+      Verified with a script firing 10 concurrent `resolveCustomer()`
+      calls for the same `clerk_user_id`: 1 row created, not 10 (deleted
+      after confirming).
+    - `seed.ts` — grievance cases with no `classification` fixture were
+      defaulting `intent` to `"card_unblock_activation"` instead of
+      `null`, contradicting the nullable-until-classified contract just
+      added. Fixed to `null`, matching `classification_intent`.
+    - `seed.ts` — the full clear-then-insert sequence now runs inside
+      `db.transaction()` so a failure partway through rolls back instead
+      of leaving the DB half-cleared.
+    - `feature-specs/06-project-api.md` — the Security section
+      contradicted itself (one line implied a missing-or-unowned id both
+      return `404`, the next assigned unowned to `403`). Reworded to one
+      unambiguous rule: `404` missing, `403` unowned. The shipped code
+      was already correct; only the doc text was self-contradicting.
+    - `feature-specs/05-sqlite.md` — updated stale `lib/db/` path
+      references to `lib/sqlite/` (the actual location, per the
+      `05-sqlite` unit's own Architecture Decision), and marked `intent`
+      nullable in the table doc to match the schema.
+    - `ai-workflow-rules.md` — Protected Files' "never touch
+      `migrations/meta/`" reworded to "never hand-edit," since the
+      generator's own output there must be committed, not avoided.
+    - **Not fixed — flagged instead:** `closedAccountOpenGrievanceCount`
+      (the churn dashboard metric) can't actually be computed from the
+      current schema — `customers` has no closure timestamp and
+      `service_request` has no status history, so "was this request
+      still open *at* account closure" isn't derivable. Pre-existing gap
+      from `05-sqlite`, not introduced by this PR; needs its own schema
+      decision rather than expanding this PR's scope. Logged here as an
+      open item, not silently left in the spec as if it were solved.
 
 ## In Progress
 
@@ -436,7 +474,7 @@ change.
   now that `lib/sqlite/` exists: replace `lib/mock/fixtures.ts` reads in
   the customer dashboard and the `/admin/conversations*` /
   `/admin/reports/*` routes with real queries, and add the
-  `lib/db/queries.ts` dashboard-metrics functions noted above.
+  `lib/sqlite/queries.ts` dashboard-metrics functions noted above.
   `lib/mock/case-thread.ts`'s `buildCaseThread()` is the single swap
   point for real message data; the mock types in `lib/mock/types.ts`
   were shaped to match the schema for this.
@@ -446,6 +484,15 @@ change.
 
 ## Open Questions
 
+- `closedAccountOpenGrievanceCount` (the churn dashboard metric,
+  `05-sqlite.md`'s Dashboard metrics section) is not actually computable
+  from the current schema: `customers` has no closure timestamp and
+  `service_request` has no status history, so "was this request still
+  open *at* the moment the account closed" can't be derived at read
+  time. Flagged by CodeRabbit on PR #3. Needs a decision — either add
+  persisted closure-time/status-history data, or redefine the metric as
+  a current-state approximation — before whoever wires the dashboard to
+  real queries builds against it.
 - Spec `01-design-system` lists "No default light style appears" as a
   done-check while `ui-context.md` states the theme is **light only, no
   dark mode**. Implemented as: shadcn's *stock default* palette never

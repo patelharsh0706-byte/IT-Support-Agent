@@ -19,6 +19,9 @@ export async function resolveCustomer(clerkUserId: string) {
   const email = clerkProfile?.primaryEmailAddress?.emailAddress ?? `${clerkUserId}@unknown`
   const name = clerkProfile?.fullName ?? email
 
+  // Conflict-safe: if a concurrent request already provisioned this
+  // clerk_user_id (see the unique index in schema.ts), this insert is a
+  // no-op and returns no row rather than throwing or duplicating.
   const [created] = await db
     .insert(customers)
     .values({
@@ -28,8 +31,17 @@ export async function resolveCustomer(clerkUserId: string) {
       email,
       status: "active",
     })
+    .onConflictDoNothing({ target: customers.clerkUserId })
     .returning()
-  return created
+  if (created) return created
+
+  const winner = await db.query.customers.findFirst({
+    where: eq(customers.clerkUserId, clerkUserId),
+  })
+  if (!winner) {
+    throw new Error(`resolveCustomer: no customer row for ${clerkUserId} after conflict`)
+  }
+  return winner
 }
 
 export async function listServiceRequestsForCustomer(customerId: string) {

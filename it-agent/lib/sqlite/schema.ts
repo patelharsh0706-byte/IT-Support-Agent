@@ -1,22 +1,32 @@
 import { sql } from "drizzle-orm"
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core"
+import { sqliteTable, text, integer, real, uniqueIndex } from "drizzle-orm/sqlite-core"
 
 // Field names and unions mirror `it-agent/lib/mock/types.ts` and the mapping
 // in `feature-specs/05-sqlite.md` — swapping fixtures for these tables is a
 // drop-in, not a rewrite.
 
-export const customers = sqliteTable("customers", {
-  id: text("id").primaryKey(),
-  clerkUserId: text("clerk_user_id"),
-  name: text("name").notNull(),
-  email: text("email").notNull(),
-  status: text("status", { enum: ["active", "closed", "unknown"] })
-    .notNull()
-    .default("active"),
-  createdAt: text("created_at")
-    .notNull()
-    .default(sql`(current_timestamp)`),
-})
+export const customers = sqliteTable(
+  "customers",
+  {
+    id: text("id").primaryKey(),
+    clerkUserId: text("clerk_user_id"),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    status: text("status", { enum: ["active", "closed", "unknown"] })
+      .notNull()
+      .default("active"),
+    createdAt: text("created_at")
+      .notNull()
+      .default(sql`(current_timestamp)`),
+  },
+  (table) => [
+    // Prevents two concurrent `resolveCustomer()` calls for the same Clerk
+    // user from provisioning duplicate customer rows (SQLite treats
+    // multiple NULLs as distinct, so seeded rows with no `clerk_user_id`
+    // are unaffected).
+    uniqueIndex("customers_clerk_user_id_unique").on(table.clerkUserId),
+  ],
+)
 
 export const cards = sqliteTable("cards", {
   id: text("id").primaryKey(),

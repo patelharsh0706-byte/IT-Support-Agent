@@ -4,14 +4,15 @@
 
 Repack the existing mock data (`it-agent/lib/mock/*.ts`) into a real SQLite schema via Drizzle, so the seed data is a drop-in replacement for the fixtures already driving the UI. No new fields beyond what the mock types already carry.
 
-Stack: SQLite via Turso (libSQL) + Drizzle ORM, per `context/architecture.md`. All of this lives in `it-agent/lib/db/`.
+Stack: SQLite via Turso (libSQL) + Drizzle ORM, per `context/architecture.md`. All of this lives in `it-agent/lib/sqlite/` — kept together (schema, client, seed, and `drizzle.config.ts`) per explicit user request, rather than split across `lib/db/` + a root config file.
 
 ## Files
 
-- `it-agent/lib/db/schema.ts` — table definitions
-- `it-agent/lib/db/client.ts` — Drizzle client, connects via `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`
-- `it-agent/lib/db/seed.ts` — seed script, ports `it-agent/lib/mock/fixtures.ts` into rows
-- `it-agent/drizzle.config.ts`
+- `it-agent/lib/sqlite/schema.ts` — table definitions
+- `it-agent/lib/sqlite/client.ts` — Drizzle client, connects via `TURSO_DATABASE_URL` + `TURSO_AUTH_TOKEN`
+- `it-agent/lib/sqlite/seed.ts` — seed script, ports `it-agent/lib/mock/fixtures.ts` into rows
+- `it-agent/lib/sqlite/queries.ts` — customer resolution and service-request query/CRUD functions
+- `it-agent/lib/sqlite/drizzle.config.ts`
 
 ## Tables
 
@@ -45,7 +46,7 @@ Repacks `Ticket` (`types.ts`) plus the social-case fields from `GrievanceCase`, 
 - `id` (pk)
 - `customer_id` (fk → `customers`, nullable — null until a social case's soft link is claimed)
 - `channel` — `amex_support` | `social` | `website_chatbot`, from `CaseChannel`
-- `intent` — `card_unblock_activation` | `unrecognized_transaction` | `update_contact_info`, from `Intent`
+- `intent` — `card_unblock_activation` | `unrecognized_transaction` | `update_contact_info`, from `Intent` — nullable: a request exists before it's classified (`lib/agent/classify.ts`, not built yet); see `06-project-api.md`
 - `title` — from `Ticket.title` / `GrievanceCase.summary`
 - `priority` — `low` | `medium` | `high`, from `Priority`
 - `status` — `open` | `in_progress` | `resolved` | `escalated`, from `TicketStatus`
@@ -117,7 +118,7 @@ Activity events for a message are rows in `agent_actions` with `chat_message_id`
 
 ## Dashboard metrics
 
-`DashboardMetrics` (`types.ts`) is **not** a table. Per `context/architecture.md`'s storage model, every figure on the dashboard is a query over `service_request` / `social_posts` / `severity_changes` at read time — never a stored, cacheable counter. Write these as query functions in `it-agent/lib/db/queries.ts`, not as seed rows:
+`DashboardMetrics` (`types.ts`) is **not** a table. Per `context/architecture.md`'s storage model, every figure on the dashboard is a query over `service_request` / `social_posts` / `severity_changes` at read time — never a stored, cacheable counter. Write these as query functions in `it-agent/lib/sqlite/queries.ts`, not as seed rows:
 
 - `openBySeverity` — `GROUP BY current_severity WHERE status != 'resolved'`
 - `oldestUnansweredCaseId` / `oldestUnansweredAgeHours` — oldest `service_request` where `reply_state = 'needs_reply'`
@@ -138,5 +139,5 @@ Port `it-agent/lib/mock/fixtures.ts` row-for-row:
 
 - `schema.ts` defines all tables above with correct fk relations
 - Seed script populates every table from the fixture data and is safe to re-run
-- `lib/db/queries.ts` computes all four dashboard metrics from live rows, not stored counters
+- `lib/sqlite/queries.ts` computes all four dashboard metrics from live rows, not stored counters
 - `npm run build` passes

@@ -15,6 +15,13 @@
       "when": 1787583991030,
       "tag": "0001_tough_eddie_brock",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787638099334,
+      "tag": "0002_outgoing_gravity",
+      "breakpoints": true
     }
   ]
 }

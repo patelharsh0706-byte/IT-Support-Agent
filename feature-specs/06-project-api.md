@@ -27,7 +27,7 @@ Security:
 
 - unauthenticated requests return `401`
 - only the request's owning customer can rename or delete it
-- non-owner mutations (or a request that does not exist) return `403` / `404` respectively — do not leak existence of another customer's request via a `403` on a missing id; a mismatched or missing id both return `404`, an id that exists but belongs to someone else returns `403`
+- a missing id returns `404`; an id that exists but belongs to another customer returns `403` — existence is checked before ownership, so the two cases are distinguishable (this does not hide whether an id exists, only who owns it)
 
 Keep this backend-only. Do not wire the UI yet.
 
