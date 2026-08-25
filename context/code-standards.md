@@ -1,53 +1,156 @@
 # Code Standards
 
+How code in `it-agent/` must be written. These are rules, not preferences.
+Where a rule and an invariant in `architecture.md` appear to conflict, the
+invariant wins and the conflict gets logged in `progress-tracker.md`.
+
 ## General
 
-- [Principle — e.g. Keep modules small and single-purpose]
-- [Principle — e.g. Fix root causes, do not layer workarounds]
-- [Principle — e.g. Do not mix unrelated concerns in one
-  component or route]
+- Keep modules small and single-purpose. A file that owns both a data shape
+  and the UI that renders it owns too much.
+- Fix root causes. Do not layer a guard over a bug you have not explained.
+- Do not mix unrelated concerns in one component or route. A route handler
+  that authenticates, mutates, and formats a response body should call three
+  things, not inline three responsibilities.
+- Derive, do not duplicate. Case age, time-in-escalation, and retention
+  status are computed at read time from their source rows — never stored,
+  so they cannot drift (`architecture.md`, Storage Model).
+- Comments explain *why*, not *what*. When a decision traces back to a
+  context file or a spec, name the file in the comment — the existing code
+  does this (see `lib/sqlite/client.ts`, `proxy.ts`).
+- Match the formatting of the file you are editing. There is no Prettier
+  config; quote style and semicolons vary by file. Never reformat a file you
+  are not otherwise changing.
+
+## Naming and Exports
+
+- Files: `kebab-case.ts` / `kebab-case.tsx` (`conversation-list-pane.tsx`).
+- React components: `PascalCase`, exported by name. No default exports
+  outside `app/` (Next.js requires them for `page.tsx` / `layout.tsx`).
+- Props interfaces are named `<ComponentName>Props` and declared above the
+  component (see `components/admin/nav-link.tsx`).
+- Database column names are `snake_case`; the Drizzle field that maps them is
+  `camelCase` (`clerkUserId: text("clerk_user_id")`).
+- Import internal modules through the `@/*` alias, never a relative path that
+  climbs out of its own folder (`@/lib/utils`, not `../../lib/utils`).
 
 ## TypeScript
 
-- [Rule — e.g. Strict mode is required throughout the project]
-- [Rule — e.g. Avoid any — use explicit interfaces or narrowly
-  scoped types]
-- [Rule — e.g. Validate unknown external input at system
-  boundaries before trusting it]
+- Strict mode is on and stays on. Do not weaken `tsconfig.json` to make an
+  error go away.
+- No `any`. Use an explicit interface, a narrow union, or `unknown` plus a
+  check at the boundary.
+- Validate unknown external input — request bodies, LLM tool arguments,
+  social-post payloads — before trusting it. Anything crossing a system
+  boundary is `unknown` until proven otherwise.
+- Model closed sets as string unions, and keep the union identical to the
+  Drizzle `enum` for the same column. `lib/mock/types.ts` and
+  `lib/sqlite/schema.ts` must agree; when they diverge, the schema is right.
+- Prefer inferred return types for internal helpers; annotate exported
+  functions whose shape is part of a contract.
+- Add a JSDoc block to any exported function whose behavior is not obvious
+  from its name — especially when it throws (`lib/auth/session.ts`).
 
-## [Framework — e.g. Next.js]
+## Next.js (App Router, v16)
 
-- [Convention — e.g. Default to server components]
-- [Convention — e.g. Add use client only when browser
-  interactivity requires it]
-- [Convention — e.g. Keep route handlers focused on a
-  single responsibility]
+- Default to server components. Add `"use client"` only when the file needs
+  browser interactivity (state, effects, event handlers), and push it as far
+  down the tree as possible.
+- Route protection lives in `proxy.ts`. Next.js 16 renamed the `middleware.ts`
+  convention — do not create a `middleware.ts`.
+- This is not the Next.js in your training data. Check the relevant guide in
+  `it-agent/node_modules/next/dist/docs/` before relying on an API you
+  remember rather than one you verified (`it-agent/AGENTS.md`).
+- Fetch data in server components and pass plain serializable props down.
+  Client components do not query the database.
+- Route groups (`app/admin/(console)/`) carry shared layout without adding a
+  URL segment. Use them instead of duplicating chrome across pages.
 
 ## Styling
 
-- [Rule — e.g. Use CSS custom property tokens — no
-  hardcoded hex values]
-- [Rule — e.g. Follow the border radius scale defined
-  in ui-context.md]
+- Use the CSS custom property tokens from `ui-context.md`. No hardcoded hex
+  values, anywhere.
+- Follow the border-radius scale in `ui-context.md`. Do not invent a radius.
+- Compose class names with `cn()` from `@/lib/utils`. Do not concatenate
+  class strings by hand or with template literals.
+- Separation is carried by `--border-default` hairlines, not drop shadows.
+- `--accent-primary` marks the single primary action in a view. A second
+  violet button in the same view means one of them is not primary.
+- When two elements must align on a shared grid, export one template class
+  and use it in both (see `lib/admin/queue-grid.ts`). Do not repeat column
+  definitions.
 
 ## API Routes
 
-- [Rule — e.g. Validate and parse request input before
-  any logic runs]
-- [Rule — e.g. Enforce auth and ownership before any mutation]
-- [Rule — e.g. Return consistent, predictable response shapes]
+- Parse and validate request input before any logic runs. Reject malformed
+  input with a 400 and no side effects.
+- Resolve the session through `lib/auth/session.ts` (`requireCustomer()` /
+  `requireCSR()`) before any mutation. No route, tool, or component reads the
+  Clerk session directly.
+- **Never trust a `customer_id` from the client, the model, or a social
+  post.** The acting customer comes from the authenticated session, always
+  (`architecture.md`, Invariant 1).
+- Authorize every tool call against the calling intent's declared capability
+  scope before it executes. An out-of-scope call is rejected *and logged* —
+  never silently allowed (Invariant 3).
+- Verify every executed action with an independent read-only re-check before
+  confirming resolution. The action tool is never its own witness
+  (Invariant 2).
+- Return consistent response shapes: a success payload, or
+  `{ error: string }` with a meaningful status code. Do not return 200 with
+  an error body.
+- Never let an internal error message, stack trace, or SQL fragment reach the
+  client.
 
 ## Data and Storage
 
-- [Rule — e.g. Metadata belongs in the database]
-- [Rule — e.g. Large generated content belongs in file
-  or blob storage]
-- [Rule — e.g. Do not store large content directly in
-  the database]
+- All database access goes through the Drizzle client exported from
+  `lib/sqlite/client.ts`. No second client, no raw `@libsql/client` calls in
+  feature code.
+- Schema changes go in `lib/sqlite/schema.ts`, followed by
+  `npm run db:generate` and a committed migration under
+  `lib/sqlite/migrations/`. Never hand-edit a generated migration or the
+  snapshot files in `migrations/meta/`.
+- Never edit `local.db` by hand. Reshape the seed (`lib/sqlite/seed.ts`) and
+  re-run `npm run db:seed`.
+- Metadata belongs in the database. Large generated content (transcripts,
+  blobs) belongs in file or blob storage — do not store it in a column.
+- Foreign keys declare their delete behavior explicitly (`cascade` where the
+  child is meaningless without the parent, `set null` where it survives).
+- Timestamps are stored as text defaulting to `(current_timestamp)`, matching
+  the existing tables.
+- Secrets come from environment variables and are documented in
+  `.env.example`. Never commit `.env.local`, and never inline a key.
 
 ## File Organization
 
-- `[folder]/` — [What belongs here]
-- `[folder]/` — [What belongs here]
-- `[folder]/` — [What belongs here]
-- `[folder]/` — [What belongs here]s
+- `app/` — routes, pages, layouts, and API route handlers only
+- `app/api/` — route handlers; one responsibility per handler
+- `components/` — feature components, grouped by surface (`admin/`,
+  `editor/`, `auth/`, `shared/`)
+- `components/ui/` — vendored shadcn primitives, added via the shadcn CLI and
+  **never hand-edited** (see Protected Files in `ai-workflow-rules.md`)
+- `components/shared/` — components used by more than one surface; promote
+  here rather than importing across `admin/` and `editor/`
+- `lib/auth/` — the only session accessors in the codebase
+- `lib/sqlite/` — Drizzle schema, client, config, seed, and migrations
+- `lib/admin/` — CSR-console-specific view logic and shared layout constants
+- `lib/mock/` — fixtures and their types; the shape the database must match
+- `lib/tools/` — servicing tool functions, each declared into exactly one
+  intent's capability scope *(planned)*
+- `lib/agent/` — classification, the deterministic pipeline, and the
+  capability/authorization gate *(planned)*
+- `lib/channels/` — social channel adapter interface + fixture impl *(planned)*
+- `lib/social/` — triage, severity, dedupe, case bridging, reply drafting,
+  aging *(planned)*
+- `proxy.ts` — Clerk middleware and route gating; nothing else
+
+## Definition of Done
+
+Before a unit is considered complete:
+
+1. `npm run build` passes.
+2. `npm run lint` passes with no new warnings.
+3. Every invariant in `architecture.md` still holds.
+4. Any context file the change invalidated has been updated in the same step.
+5. `progress-tracker.md` reflects the completed work.

@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local sqlite (dev fallback when TURSO_DATABASE_URL is unset)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

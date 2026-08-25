@@ -34,6 +34,7 @@ If a future unit needs a genuinely different shape — parallel sub-agent fan-ou
 
 - `app/` — routes, pages, and API route handlers
 - `app/api/chat/` — receives chat requests, runs the AI SDK agent loop, streams responses + tool activity
+- `app/api/service-requests/`, `app/api/service-requests/[serviceRequestId]/` — list/create/rename/delete a customer's own service requests (not agent-classified; `intent` is null until `lib/agent/classify.ts` runs), scoped to the authenticated customer
 - `app/api/social/sweep/` — authenticated endpoint that ingests, triages, and dedupes social grievances into `service_request`
 - `app/api/grievances/[id]/reply/` — records a CSR-sent reply; there is no code path that sends without an explicit human action
 - `app/sign-in/`, `app/sign-up/` — Clerk-hosted auth screens, the customer door (self-serve)
@@ -41,7 +42,7 @@ If a future unit needs a genuinely different shape — parallel sub-agent fan-ou
 - `app/editor/` — the customer-facing landing surface (chat interface lands here once built)
 - `app/admin/grievances/` — the CSR console: queue, case detail, dashboard
 - `lib/auth/` — session accessors (`requireCustomer()`, `requireCSR()`) that resolve the Clerk session and enforce role
-- `lib/db/` — Drizzle schema, client, and seed data
+- `lib/sqlite/` — Drizzle schema, client, and seed data
 - `lib/tools/` — the servicing tool functions, each declared into exactly one intent's capability scope
 - `lib/agent/` — the classification stage, the deterministic pipeline (priority → route → execute → verify), and the capability/authorization gate
 - `lib/channels/` — the social channel adapter interface and fixture implementation

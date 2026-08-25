@@ -1,62 +1,122 @@
 # AI Workflow Rules
 
+How to work in this repository. These rules govern process; `code-standards.md`
+governs the code itself.
+
 ## Approach
 
-[Describe the overall development approach — e.g. Build
-this project incrementally using a spec-driven workflow.
-Context files define what to build, how to build it, and
-the current state of progress. Always implement against
-these specs — do not infer or invent behavior from scratch.]
+Build this project incrementally using a spec-driven workflow. The files in
+`context/` define what to build, how to build it, and the current state of
+progress; the files in `feature-specs/` define individual feature units in
+detail. Always implement against these specs — do not infer or invent
+behavior from scratch.
+
+The reading order is fixed and lives in `it-agent/AGENTS.md`:
+`project-overview.md` → `architecture.md` → `ai-workflow-rules.md` →
+`code-standards.md` → `ui-context.md` → `progress-tracker.md`. Read them
+before implementing anything or making any architecture decision, then read
+the `feature-specs/` entry for the unit you are about to build.
+
+Specs come before code. If a feature unit has no spec in `feature-specs/`,
+write the spec first, get it agreed, then implement it.
 
 ## Scoping Rules
 
-- Work on one feature unit at a time
-- Prefer small, verifiable increments over large
-  speculative changes
-- Do not combine unrelated system boundaries in a
-  single implementation step
+- Work on one feature unit at a time — the unit named as current in
+  `progress-tracker.md`.
+- Prefer small, verifiable increments over large speculative changes.
+- Do not combine unrelated system boundaries in a single implementation step.
+- Do not build ahead of the spec. Scaffolding for a unit that has not been
+  specced is speculative work, and it is not free — it constrains the design
+  before the design exists.
+- Every step ends at something demonstrable: a screen that renders, a route
+  that returns, a query that runs. "Half a pipeline" is not a stopping point.
 
 ## When to Split Work
 
 Split an implementation step if it combines:
 
-- [Concern one — e.g. UI changes and background task changes]
-- [Concern two — e.g. Multiple unrelated API routes]
-- [Concern three — e.g. Behavior not clearly defined in
-  the context files]
+- UI changes and data-layer or schema changes
+- More than one API route, or a route plus the tools it calls
+- A servicing tool and its verifier — the verifier is the check on the tool,
+  so building both in one pass means nothing independently checked the action
+- Auth/access changes with any feature change
+- Behavior not clearly defined in the context files
 
-If a change cannot be verified end to end quickly,
-the scope is too broad — split it.
+If a change cannot be verified end to end quickly, the scope is too broad —
+split it.
 
 ## Handling Missing Requirements
 
-- Do not invent product behavior not defined in the
-  context files
-- If a requirement is ambiguous, resolve it in the
-  relevant context file before implementing
-- If a requirement is missing, add it as an open question
-  in `progress-tracker.md` before continuing
+- Do not invent product behavior not defined in the context files.
+- If a requirement is ambiguous, resolve it in the relevant context file
+  before implementing — not in a code comment, and not silently in the
+  implementation.
+- If a requirement is missing, add it as an open question in
+  `progress-tracker.md` before continuing.
+- If an implementation detail contradicts a context file, the context file is
+  the source of truth until it is deliberately changed. Update the file in
+  the same step as the code, or stop and raise it.
+
+## Invariants Are Non-Negotiable
+
+Before any change, confirm it upholds every invariant in `architecture.md`.
+The ones most easily broken by ordinary-looking code:
+
+- The acting customer always comes from the authenticated session — never
+  from client input, model output, or a social post (Invariant 1).
+- Every executed tool call is independently verified before the agent
+  confirms resolution (Invariant 2).
+- Every tool call is authorized against the calling intent's capability scope
+  before it executes (Invariant 3).
+- No servicing action ever runs on the authority of an unauthenticated
+  channel (Invariant 4).
+- The agent never publishes. Every reply requires an explicit human send —
+  there is no configuration that removes that step (Invariant 5).
+
+An invariant is not a default to be overridden for convenience. If one is
+genuinely wrong, change it in `architecture.md` explicitly, with the reason
+recorded — do not work around it in code.
 
 ## Protected Files
 
 Do not modify the following unless explicitly instructed:
 
-- [e.g. components/ui/* — generated UI library components]
-- [e.g. Any third-party library internals]
+- `it-agent/components/ui/*` — vendored shadcn primitives; add or update them
+  through the shadcn CLI, never by hand
+- `it-agent/lib/sqlite/migrations/*` — generated by `npm run db:generate`;
+  regenerate rather than hand-edit, and commit the generated migration and
+  `migrations/meta/` outputs together
+- `it-agent/local.db` — regenerate via `npm run db:seed`
+- `it-agent/package-lock.json` — changes only as a side effect of an install
+- `it-agent/node_modules/*` — third-party library internals
+- The `nextjs-agent-rules` block at the top of `it-agent/AGENTS.md` — it is
+  rewritten by `next dev`; commit it with your work rather than deleting it
+- `.env.local` and any real credential — document new variables in
+  `.env.example` instead
 
 ## Keeping Docs in Sync
 
-Update the relevant context file whenever implementation
-changes:
+Update the relevant context file whenever implementation changes:
 
-- System architecture or boundaries
-- Storage model decisions
-- Code conventions or standards
-- Feature scope
+| What changed | File to update |
+| --- | --- |
+| System architecture, boundaries, or invariants | `architecture.md` |
+| Storage model or schema decisions | `architecture.md` + the feature spec |
+| Code conventions or standards | `code-standards.md` |
+| Visual language, tokens, or layout patterns | `ui-context.md` |
+| Feature scope, goals, or success criteria | `project-overview.md` |
+| Status, decisions, open questions | `progress-tracker.md` |
+| Behavior of a single feature unit | `feature-specs/<nn>-<name>.md` |
+
+Docs and code ship in the same step. A change that leaves a context file
+describing something that is no longer true is not finished.
 
 ## Before Moving to the Next Unit
 
 1. The current unit works end to end within its defined scope
 2. No invariant defined in `architecture.md` was violated
-3. `progress-tracker.md` reflects the completed work
-4. `npm run build` passes
+3. Every context file the change invalidated has been updated
+4. `progress-tracker.md` reflects the completed work
+5. `npm run lint` passes with no new warnings
+6. `npm run build` passes

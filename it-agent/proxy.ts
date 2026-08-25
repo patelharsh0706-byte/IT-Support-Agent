@@ -8,6 +8,7 @@ const isPublicRoute = createRouteMatcher([
 ]);
 
 const isAdminRoute = createRouteMatcher(["/admin(.*)"]);
+const isApiRoute = createRouteMatcher(["/api(.*)"]);
 
 export default clerkMiddleware(async (auth, req) => {
   if (isPublicRoute(req)) {
@@ -17,6 +18,13 @@ export default clerkMiddleware(async (auth, req) => {
   const { userId, sessionClaims } = await auth();
 
   if (!userId) {
+    // API routes are called by fetch clients, not navigated to — a 307 to
+    // an HTML sign-in page is not a usable response there. Every route's
+    // own 401 handling (e.g. `app/api/service-requests/`) is unreachable
+    // without this, since this middleware runs first.
+    if (isApiRoute(req)) {
+      return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+    }
     const signInPath = isAdminRoute(req) ? "/admin/sign-in" : "/customer/sign-in";
     return NextResponse.redirect(new URL(signInPath, req.url));
   }

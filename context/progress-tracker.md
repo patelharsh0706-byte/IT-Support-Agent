@@ -15,8 +15,9 @@ change.
   `context/architecture.md`, and `feature-specs/03-auth.md` are rewritten for
   the new framing; `docs/plans/2026-08-14-001-…` (backend spine) and
   `docs/plans/2026-08-22-001-…` (social grievance intake) are the two active
-  plans. Nothing in `it-agent/lib/` implements either yet — vocabulary and
-  UI-layer work only so far.
+  plans. The data layer (U1–U2) now exists — see Completed below. Next is
+  the agent pipeline itself: `lib/agent/classify.ts`, `lib/agent/pipeline.ts`,
+  and `app/api/chat/route.ts`, wired to the schema just seeded.
 
 ## Completed
 
@@ -319,40 +320,197 @@ change.
   - **Deliberately not fixed — `proxy.ts` / simultaneous customer+admin sessions.** CodeRabbit's suggestion ("implement per-window session-token handling") isn't a real Clerk pattern — a single browser profile has one shared cookie jar across every tab/window, so two different signed-in users can never coexist there regardless of app code. The actual fix is operational, not code: use a second browser profile or an Incognito/Private window for the second role when demoing both sides at once. Already explained to and accepted by the user; no code change made.
   - Verified: `tsc`/`lint`/`build` all clean. Each behavioral fix (1, 3, 5, and the date-divider fix) re-verified live against the dev server via a temporary `proxy.ts` exemption (reverted, confirmed via `git diff proxy.ts` returning empty) — not just re-reading the diff. `/customer/dashboard` re-screenshotted; the date shift observed there is the fix working as intended, not a regression.
 
+- **05-sqlite (U1–U2 of the orchestration plan) — Drizzle/SQLite data layer**
+  - Rewrote `feature-specs/05-sqlite.md` from stale Prisma/Postgres content
+    (leftover from before the Amex repackaging) into a table-by-table
+    mapping of the existing mock types (`Ticket`, `ChatMessage`,
+    `GrievanceCase`, `ActivityEvent`, `DashboardMetrics` in
+    `lib/mock/types.ts`) onto real tables, so seeding is a port, not a
+    redesign.
+  - Installed `drizzle-orm`, `@libsql/client`, `drizzle-kit`, `tsx`. All
+    database code lives under `it-agent/lib/sqlite/` (schema, client,
+    seed, and `drizzle.config.ts` all together, per explicit user
+    request — not split across `lib/db/` + a root config file).
+  - `lib/sqlite/schema.ts` — 8 tables: `customers`, `cards`,
+    `service_request` (shared by chat tickets and grievance cases,
+    `channel` tells them apart, `customer_id` nullable for an unclaimed
+    social case), `social_posts`, `severity_changes`, `chat_sessions`,
+    `chat_messages`, `agent_actions` (shared audit table for both chat
+    activity events and grievance tool-call logs — exactly one of
+    `service_request_id` / `chat_message_id` is set per row, chosen over
+    two separate tables so a cross-channel query never needs a `UNION`).
+  - `lib/sqlite/client.ts` — one libSQL client for both environments: a
+    `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` connection when set, else a
+    local `file:local.db` (gitignored) for dev — same client either way,
+    not a different fallback path. Cached on `global` in development.
+  - `lib/sqlite/seed.ts` — ports `lib/mock/fixtures.ts` row-for-row:
+    6 tickets + 4 grievance cases → 10 `service_request` rows, their
+    `activityEvents`/`toolCallLog` → 10 `agent_actions` rows, plus 5
+    `customers` (including one seeded `closed` with a still-open linked
+    request, so the churn-metric success criterion has real data). Safe
+    to re-run — clears every table first.
+  - `package.json` scripts: `db:generate`, `db:migrate`, `db:studio`,
+    `db:seed`, pointed at `lib/sqlite/drizzle.config.ts`.
+  - Verified: migration generated and applied cleanly; seed run twice
+    (idempotency confirmed); row counts checked directly (5 customers,
+    10 service_requests, 10 agent_actions); `npx tsc --noEmit` and
+    `npm run build` both clean.
+  - **Not done in this unit:** `lib/db/queries.ts` for the four dashboard
+    metrics (still fixture-computed, per `05-sqlite.md`'s note that these
+    must be live queries, never stored counters) — deferred to whoever
+    wires `04-project-dialogs` to real data.
+
+- **06-project-api — service-request CRUD API routes**
+  - `feature-specs/06-project-api.md` was pasted as a generic "Project"
+    CRUD example (list/create/rename/delete, `ownerId`); there is no
+    `projects` table in this app. Confirmed with the user and rewritten
+    onto the real entity: `service_request`, the table shared by
+    customer tickets and CSR grievance cases.
+  - `app/api/service-requests/route.ts` (`GET` list, `POST` create) and
+    `app/api/service-requests/[serviceRequestId]/route.ts` (`PATCH`
+    rename, `DELETE`) — customer-scoped only; no CSR/admin surface here.
+  - `lib/sqlite/queries.ts` (new) — `resolveCustomer()` finds the
+    `customers` row for the signed-in Clerk user by `clerk_user_id`, or
+    provisions one from the Clerk profile on first request (no seeded
+    customer had `clerk_user_id` set, and this was already the
+    documented U2 follow-up blocker — see Architecture Decisions).
+    `listServiceRequestsForCustomer`, `createServiceRequest`,
+    `getServiceRequestById`, `renameServiceRequest`,
+    `deleteServiceRequest` round out the CRUD.
+  - `lib/sqlite/schema.ts` — `service_request.intent` changed from
+    `NOT NULL` to nullable: a customer-created request exists before
+    classification runs (`lib/agent/classify.ts`, not built yet), so it
+    genuinely has no intent yet. Migration
+    `lib/sqlite/migrations/0001_tough_eddie_brock.sql` generated and
+    applied.
+  - `proxy.ts` — unauthenticated requests to `/api/*` now get a JSON
+    `401` instead of a `307` redirect to the sign-in page (a redirect is
+    not a usable response for a fetch client). Page routes are
+    unaffected; verified `/customer/dashboard` and `/admin/conversations`
+    still redirect as before.
+  - IDs: `tkt_` + `crypto.randomUUID()` for new service requests,
+    `cust_` + `crypto.randomUUID()` for auto-provisioned customers —
+    matches the existing prefix convention, no sequential IDs.
+  - Verified: `npx tsc --noEmit`, `npm run lint`, `npm run build` all
+    clean. All four routes curl-tested against the dev server —
+    unauthenticated `GET`/`POST`/`PATCH`/`DELETE` all return `401` JSON.
+    Owner/not-found checks additionally verified live against a real
+    signed-in Clerk session (2026-08-25): auto-provisioning confirmed in
+    Drizzle Studio (`customers` row created with real `clerk_user_id`,
+    name, email from the Clerk profile on first request), create/rename/
+    delete round-tripped on the user's own ticket, renaming someone
+    else's seeded ticket (`tkt_1`, owned by `cust_you`) returned `403`,
+    and deleting a nonexistent id returned `404`.
+  - **Not done in this unit:** UI is not wired to these routes (per
+    spec, "Keep this backend-only").
+  - **CodeRabbit fixes on PR #3 (2026-08-25):** 6 of 9 findings addressed.
+    - `resolveCustomer()` had a real race: no unique constraint on
+      `customers.clerk_user_id`, so two concurrent requests from the same
+      new sign-in could each insert a separate customer row. Added a
+      `uniqueIndex` on `clerk_user_id` (migration
+      `0002_outgoing_gravity.sql`, NULLs stay distinct per SQLite so
+      seeded rows without one are unaffected) and made the insert
+      conflict-safe (`onConflictDoNothing` + re-fetch the winner).
+      Verified with a script firing 10 concurrent `resolveCustomer()`
+      calls for the same `clerk_user_id`: 1 row created, not 10 (deleted
+      after confirming).
+    - `seed.ts` — grievance cases with no `classification` fixture were
+      defaulting `intent` to `"card_unblock_activation"` instead of
+      `null`, contradicting the nullable-until-classified contract just
+      added. Fixed to `null`, matching `classification_intent`.
+    - `seed.ts` — the full clear-then-insert sequence now runs inside
+      `db.transaction()` so a failure partway through rolls back instead
+      of leaving the DB half-cleared.
+    - `feature-specs/06-project-api.md` — the Security section
+      contradicted itself (one line implied a missing-or-unowned id both
+      return `404`, the next assigned unowned to `403`). Reworded to one
+      unambiguous rule: `404` missing, `403` unowned. The shipped code
+      was already correct; only the doc text was self-contradicting.
+    - `feature-specs/05-sqlite.md` — updated stale `lib/db/` path
+      references to `lib/sqlite/` (the actual location, per the
+      `05-sqlite` unit's own Architecture Decision), and marked `intent`
+      nullable in the table doc to match the schema.
+    - `ai-workflow-rules.md` — Protected Files' "never touch
+      `migrations/meta/`" reworded to "never hand-edit," since the
+      generator's own output there must be committed, not avoided.
+    - **Not fixed — flagged instead:** `closedAccountOpenGrievanceCount`
+      (the churn dashboard metric) can't actually be computed from the
+      current schema — `customers` has no closure timestamp and
+      `service_request` has no status history, so "was this request
+      still open *at* account closure" isn't derivable. Pre-existing gap
+      from `05-sqlite`, not introduced by this PR; needs its own schema
+      decision rather than expanding this PR's scope. Logged here as an
+      open item, not silently left in the spec as if it were solved.
+
+- **Hydration-mismatch fix — `SeverityHistory` (2026-08-25)**
+  - `components/admin/severity-history.tsx` combined `month`/`day`/`hour`/
+    `minute` into one `Intl.DateTimeFormat` call. Node's and the browser's
+    ICU/CLDR data can disagree on the connector text a *combined*
+    date+time formatter inserts ("Aug 19, 5:35 PM" server-side vs "Aug 19
+    at 5:35 PM" client-side for the same input), which is exactly the kind
+    of "external changing data" React's hydration diff flags — a real SSR
+    mismatch, not a false positive.
+  - Fixed by splitting into two formatters (date-only, time-only) joined
+    with a separator this code controls, matching the pattern already used
+    elsewhere (`conversation-message.tsx`, `conversation-thread.tsx`,
+    `message-list.tsx`, `message-item.tsx` all format date and time
+    separately — `severity-history.tsx` was the one outlier that combined
+    them).
+  - Verified: `npx tsc --noEmit`, `npm run lint`, `npm run build` all
+    clean; confirmed the new formatter pair produces a deterministic
+    string not dependent on locale-specific connector data.
+
 ## In Progress
 
 - None.
 
 ## Next Up
 
-- **U1–U2 of the orchestration plan** (`docs/plans/2026-08-14-001-…`) —
-  dependencies, env validation, and the data layer. Nothing in
-  `it-agent/lib/` exists yet: no `drizzle-orm`, no `@libsql/client`, no
-  `lib/db/`. This blocks everything below.
+- **U3+ of the orchestration plan** — the agent pipeline itself:
+  `lib/agent/classify.ts` (LLM classify call), `lib/agent/pipeline.ts`
+  (deterministic priority → route → execute → verify), and
+  `app/api/chat/route.ts` (the streaming chat route tying both together),
+  built against the schema seeded in `lib/sqlite/`. Resolving a real
+  `customer_id` from the Clerk session is no longer a blocker —
+  `resolveCustomer()` in `lib/sqlite/queries.ts` (added in 06-project-api)
+  does this and can be reused directly.
 - **03-auth (rest)** — Clerk sign-in/sign-up, role-based routing, and the
-  `proxy.ts` gate are done. What remains is blocked on U1–U2: the
-  `customers.clerk_user_id` / `customers.role` columns, so
-  `lib/auth/session.ts` can resolve an internal `customer_id` instead of
-  stopping at the Clerk user id.
-- **Social grievance intake** (`docs/plans/2026-08-22-001-…`) — blocked on
-  the data layer and the classifier (U5). Demo-critical spine is S1
-  (channel adapter + fixtures), S2 (triage), S4 (case bridge), S5 (CSR
-  queue + case detail). S8 (dashboard) is confirmed in-scope, not
-  optional — see the plan's Effort and Sequencing section before cutting
-  anything under time pressure.
-- Wire the `04-project-dialogs` UI (now built, mock data only) to real
-  data once U1–U2 and the social-intake units land: replace
-  `lib/mock/fixtures.ts` reads in the customer dashboard and the
-  `/admin/conversations*` / `/admin/reports/*` routes with real
-  queries. `lib/mock/case-thread.ts`'s `buildCaseThread()` is the
-  single swap point for real message data; the mock types in
-  `lib/mock/types.ts` were shaped to match the target schema for this.
+  `proxy.ts` gate are done. `customers.clerk_user_id` linkage is now
+  implemented as `resolveCustomer()` in `lib/sqlite/queries.ts` (find by
+  `clerk_user_id`, or provision from the Clerk profile on first request) —
+  used by the `06-project-api` routes. `lib/auth/session.ts` itself is
+  unchanged and still only resolves the Clerk user id/role; callers that
+  need an internal `customer_id` call `resolveCustomer()` with it.
+- **Social grievance intake** (`docs/plans/2026-08-22-001-…`) — the data
+  layer it needed (`social_posts`, `severity_changes` on
+  `service_request`) now exists; still blocked on the classifier (U5).
+  Demo-critical spine is S1 (channel adapter + fixtures), S2 (triage), S4
+  (case bridge), S5 (CSR queue + case detail). S8 (dashboard) is
+  confirmed in-scope, not optional — see the plan's Effort and Sequencing
+  section before cutting anything under time pressure.
+- Wire the `04-project-dialogs` UI (built, mock data only) to real data
+  now that `lib/sqlite/` exists: replace `lib/mock/fixtures.ts` reads in
+  the customer dashboard and the `/admin/conversations*` /
+  `/admin/reports/*` routes with real queries, and add the
+  `lib/sqlite/queries.ts` dashboard-metrics functions noted above.
+  `lib/mock/case-thread.ts`'s `buildCaseThread()` is the single swap
+  point for real message data; the mock types in `lib/mock/types.ts`
+  were shaped to match the schema for this.
 - Real severity/priority design tokens: `severity-badge.tsx` /
   `priority-badge.tsx` currently reuse the 3 existing state tokens
   (confirmed with the user as a stopgap, not a final design decision).
 
 ## Open Questions
 
+- `closedAccountOpenGrievanceCount` (the churn dashboard metric,
+  `05-sqlite.md`'s Dashboard metrics section) is not actually computable
+  from the current schema: `customers` has no closure timestamp and
+  `service_request` has no status history, so "was this request still
+  open *at* the moment the account closed" can't be derived at read
+  time. Flagged by CodeRabbit on PR #3. Needs a decision — either add
+  persisted closure-time/status-history data, or redefine the metric as
+  a current-state approximation — before whoever wires the dashboard to
+  real queries builds against it.
 - Spec `01-design-system` lists "No default light style appears" as a
   done-check while `ui-context.md` states the theme is **light only, no
   dark mode**. Implemented as: shadcn's *stock default* palette never
@@ -434,6 +592,14 @@ change.
   called as a library from an API route, satisfies this while still being
   a real agent. Confirmed explicitly with the user rather than assumed —
   see `context/architecture.md`, Agent Architecture.
+- **Database code lives under `lib/sqlite/`, not `lib/db/`.** The
+  orchestration plan (`docs/plans/2026-08-14-001-…`) and
+  `context/architecture.md`'s System Boundaries both say `lib/db/`; the
+  user explicitly asked to keep schema, client, seed, and
+  `drizzle.config.ts` together under one folder for this build. Everything
+  the boundary rule protects ("only `lib/db/` touches the database") still
+  holds — it's just named `lib/sqlite/` instead. `context/architecture.md`'s
+  System Boundaries entry was updated to `lib/sqlite/` to match.
 - **Social grievances are a second front door onto the same pipeline, not
   a second pipeline.** A social post triages, dedupes, and opens or
   attaches to an ordinary `service_request` row with `verified: false` on
@@ -441,6 +607,25 @@ change.
   authenticated session claiming it. The agent drafts replies; only a
   human CSR sends — no auto-send path exists at any configuration. See
   `docs/plans/2026-08-22-001-feat-social-grievance-intake-plan.md`.
+- **Customer auto-provisioning on first API request, 2026-08-24.** No
+  seeded `customers` row has `clerk_user_id` set, so `resolveCustomer()`
+  (`lib/sqlite/queries.ts`) creates one from the Clerk profile
+  (email/name) the first time a signed-in customer hits an authenticated
+  route, rather than failing closed until someone manually links the
+  Clerk user to a seed row. Chosen so real sign-ins work out of the box;
+  does not touch invariant 1 (the created row is keyed to that same
+  session's `clerk_user_id`, never a client-supplied id).
+- **`service_request.intent` is nullable, 2026-08-24.** Was `NOT NULL`
+  since `05-sqlite`, but a customer creating their own ticket via
+  `06-project-api`'s routes has not been classified yet — `intent` is
+  the classifier's job (`lib/agent/classify.ts`, not built), distinct
+  from `classification_intent` which already was nullable. Migration
+  `0001_tough_eddie_brock.sql`.
+- **`proxy.ts` returns JSON `401` for unauthenticated `/api/*` requests
+  instead of redirecting, 2026-08-24.** The existing behavior (redirect
+  to the sign-in page) was written for page navigation; a fetch client
+  hitting an API route needs a real status code, not a `307` to HTML.
+  Page routes are unaffected — only the `/api/*` branch changed.
 
 ## Session Notes
 
