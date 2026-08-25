@@ -1,12 +1,23 @@
 import { SeverityBadge } from "@/components/shared/severity-badge"
 import type { SeverityChange } from "@/lib/mock/types"
 
-const dateTimeFormatter = new Intl.DateTimeFormat("en-US", {
+// Two separate formatters, joined with a fixed separator, rather than one
+// combined date+time formatter: Node's and the browser's ICU data can
+// disagree on the connector text a combined formatter inserts between the
+// date and time parts ("," vs "at"), which causes an SSR hydration mismatch.
+const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "numeric",
+})
+const timeFormatter = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
 })
+
+function formatChangedAt(iso: string) {
+  const date = new Date(iso)
+  return `${dateFormatter.format(date)}, ${timeFormatter.format(date)}`
+}
 
 interface SeverityHistoryProps {
   history: SeverityChange[]
@@ -33,7 +44,7 @@ export function SeverityHistory({ history }: SeverityHistoryProps) {
             <span className="text-muted-foreground">→</span>
             <SeverityBadge severity={change.to} />
             <span className="ml-auto text-[12px] text-muted-foreground">
-              {dateTimeFormatter.format(new Date(change.changedAt))}
+              {formatChangedAt(change.changedAt)}
             </span>
           </div>
           {change.reason ? (

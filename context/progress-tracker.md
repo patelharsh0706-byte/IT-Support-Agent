@@ -442,6 +442,24 @@ change.
       decision rather than expanding this PR's scope. Logged here as an
       open item, not silently left in the spec as if it were solved.
 
+- **Hydration-mismatch fix — `SeverityHistory` (2026-08-25)**
+  - `components/admin/severity-history.tsx` combined `month`/`day`/`hour`/
+    `minute` into one `Intl.DateTimeFormat` call. Node's and the browser's
+    ICU/CLDR data can disagree on the connector text a *combined*
+    date+time formatter inserts ("Aug 19, 5:35 PM" server-side vs "Aug 19
+    at 5:35 PM" client-side for the same input), which is exactly the kind
+    of "external changing data" React's hydration diff flags — a real SSR
+    mismatch, not a false positive.
+  - Fixed by splitting into two formatters (date-only, time-only) joined
+    with a separator this code controls, matching the pattern already used
+    elsewhere (`conversation-message.tsx`, `conversation-thread.tsx`,
+    `message-list.tsx`, `message-item.tsx` all format date and time
+    separately — `severity-history.tsx` was the one outlier that combined
+    them).
+  - Verified: `npx tsc --noEmit`, `npm run lint`, `npm run build` all
+    clean; confirmed the new formatter pair produces a deterministic
+    string not dependent on locale-specific connector data.
+
 ## In Progress
 
 - None.
