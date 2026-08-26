@@ -1,6 +1,7 @@
 import { Suspense } from "react"
 
 import { AdminNavRail } from "@/components/admin/nav-rail"
+import { requireCSR } from "@/lib/auth/session"
 import { listGrievanceCases } from "@/lib/sqlite/queries"
 
 function NavRailFallback() {
@@ -12,6 +13,10 @@ export default async function AdminConsoleLayout({
 }: {
   children: React.ReactNode
 }) {
+  // `proxy.ts` already gates every route under this group to `role === "csr"`;
+  // this is defense in depth, same pattern as the API routes (see
+  // `context/code-standards.md`, API Routes).
+  await requireCSR()
   const cases = await listGrievanceCases()
 
   return (

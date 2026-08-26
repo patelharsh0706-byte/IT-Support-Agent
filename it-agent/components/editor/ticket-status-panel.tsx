@@ -65,7 +65,7 @@ function buildTimeline(ticket: Ticket): TimelineStep[] {
     {
       status: "escalated",
       reached: escalatedReached,
-      at: escalatedReached ? (escalatedAt ?? updatedAt) : null,
+      at: escalatedReached ? (escalatedAt ?? null) : null,
     },
     {
       status: "resolved",

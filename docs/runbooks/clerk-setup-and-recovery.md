@@ -169,7 +169,7 @@ npm run dev
 
 Use this to tell "auth is broken" from "auth is working correctly":
 
-```
+```text
 /                     -> 307    redirect to sign-in
 /customer/sign-in     -> 200
 /sign-up              -> 200
@@ -187,17 +187,22 @@ clients can't follow a redirect to an HTML sign-in page, so each route's own
 
 ## 6. Current instance (2026-08-25)
 
+Real app/instance IDs and user identifiers are intentionally **not** committed
+here — this file is version-controlled and may be shared. Keep the live
+values in an access-controlled record (password manager, team wiki, or
+`.env.local`, all already gitignored) and reference this table's shape only:
+
 | | |
 | --- | --- |
-| App | `Amex Customer Service` — `app_3IORCCnSXSizaOSAgFRpTftJXct` |
-| Dev instance | `ins_3IORCCBXVcHhD1du78kTrGTzAQo` |
-| Frontend API | `boss-snipe-1592.clerk.accounts.dev` |
-| CSR | patelharsh0706@gmail.com — `user_3IORpKzakgqyan0I9fEfzE8mMt1` |
-| Customer | killer.master502@gmail.com — `user_3IORhhIcJun7tJB6G567AXiJ5Vm` |
+| App | `Amex Customer Service` — `app_<redacted>` |
+| Dev instance | `ins_<redacted>` |
+| Frontend API | `<redacted>.clerk.accounts.dev` |
+| CSR | `<csr-email>` — `user_<redacted>` |
+| Customer | `<customer-email>` — `user_<redacted>` |
 
-Superseded: `careful-grub-1107` / `app_3IGbdc5pSUETxiFKOXTmfH8gIzD` (deleted
-server-side; cause never determined — it was live at ~01:35 and 404ing by
-~12:38 on 2026-08-25, with no traffic in between to narrow it).
+Superseded: a prior app instance was deleted server-side; cause never
+determined — it was live and then 404ing a few hours later, with no traffic
+in between to narrow it.
 
 Keys live in `it-agent/.env.local` (gitignored). Names only are documented in
 `.env.example`.
