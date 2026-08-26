@@ -33,12 +33,17 @@ export function buildTicketThread(
     message,
   }))
 
-  if (ticket?.escalatedAt) {
+  // Gated on the stated reason, not on `escalatedAt` — same rule as
+  // `buildCaseThread()`, for the same reason: `escalatedAt` is the
+  // time-in-escalation clock basis and gets set by paths no customer
+  // initiated, while a reason exists only when one actually escalated.
+  const statedReason = ticket?.escalationReason?.trim()
+  if (ticket?.escalatedAt && statedReason) {
     entries.push({
       kind: "escalation",
       id: `${ticket.id}_escalation`,
       timestamp: ticket.escalatedAt,
-      reason: ticket.escalationReason ?? "",
+      reason: statedReason,
     })
   }
 

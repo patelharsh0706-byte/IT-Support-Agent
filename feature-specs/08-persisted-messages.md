@@ -58,8 +58,18 @@ night", with the escalation itself invisible. Corrected:
 - `CaseThreadMessage` gains `kind: "message" | "escalation"`.
   `buildCaseThread()` synthesizes the escalation entry at its
   `escalated_at` position — the same merge treatment `dedupePosts`
-  already gets. A case escalated with no reason (seeded rows, older
-  escalations) still gets the marker; only the reason line is omitted.
+  already gets.
+- **The marker is gated on the stated reason, not on `escalatedAt`.**
+  The two fields mean different things: `escalatedAt` is the
+  time-in-escalation clock basis, set by any path that puts a case into
+  escalation (seeding, intake, a severity bump), while
+  `escalation_reason` is written only when a customer actually escalated
+  and said why. Gating on the timestamp invented an escalation event for
+  cases where none happened and attributed it to a customer who never
+  escalated — visible on three seeded cases as "Escalated by {name} — No
+  reason given", two of which were not even in `escalated` status. Those
+  cases keep their escalation clock and queue behaviour; they just carry
+  no thread event. A marker therefore always has a reason to show.
 - Both surfaces render the event through one shared
   `components/shared/escalation-marker.tsx` — a centered marker with
   "Reason: …" beneath — so the CSR console and the customer dashboard

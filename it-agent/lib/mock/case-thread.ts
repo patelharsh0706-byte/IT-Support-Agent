@@ -66,22 +66,30 @@ export function buildCaseThread(grievanceCase: GrievanceCase): CaseThreadMessage
   }))
 
   // Derived from the `service_request` row, never stored as a message —
-  // see `escalateServiceRequest()`. `body` is the customer's stated reason
-  // when there is one; older/CSR-side escalations carry only a timestamp,
-  // and the marker still belongs in the thread without a reason.
-  const escalation: CaseThreadMessage[] = grievanceCase.escalatedAt
-    ? [
-        {
-          id: `${grievanceCase.id}_escalation`,
-          caseId: grievanceCase.id,
-          kind: "escalation",
-          author: "customer",
-          authorName: grievanceCase.customerName,
-          body: grievanceCase.escalationReason ?? "",
-          timestamp: grievanceCase.escalatedAt,
-        },
-      ]
-    : []
+  // see `escalateServiceRequest()`.
+  //
+  // Gated on the stated reason, not on `escalatedAt`: the two mean
+  // different things. `escalatedAt` is the time-in-escalation clock
+  // basis, set by any path that puts a case into escalation (seeding,
+  // intake, a severity bump); `escalationReason` is written only when a
+  // customer actually escalated and said why. Keying the marker off the
+  // timestamp invented an escalation event for cases where none
+  // happened, and attributed it to a customer who never escalated.
+  const statedReason = grievanceCase.escalationReason?.trim()
+  const escalation: CaseThreadMessage[] =
+    statedReason && grievanceCase.escalatedAt
+      ? [
+          {
+            id: `${grievanceCase.id}_escalation`,
+            caseId: grievanceCase.id,
+            kind: "escalation",
+            author: "customer",
+            authorName: grievanceCase.customerName,
+            body: statedReason,
+            timestamp: grievanceCase.escalatedAt,
+          },
+        ]
+      : []
 
   // No message from any source (a case raised through a channel that
   // leaves no post and that nobody has written to yet) — a thread must
@@ -125,9 +133,13 @@ export function caseLastActivityAt(grievanceCase: GrievanceCase): string {
   return timestamps.reduce((latest, ts) => (ts > latest ? ts : latest))
 }
 
-/** The one-line form of an escalation event, for previews and summaries. */
+/**
+ * The one-line form of an escalation event, for previews and summaries.
+ * The reason is always present — see `buildCaseThread()`, which only
+ * emits an escalation entry when the customer stated one.
+ */
 export function escalationPreviewText(reason: string): string {
-  return reason.trim().length > 0 ? `Escalated — ${reason}` : "Escalated"
+  return `Escalated — ${reason}`
 }
 
 /**

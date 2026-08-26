@@ -641,8 +641,17 @@ change.
     `escalated_at` + `escalation_reason` on the `service_request` row are
     the single source of truth, `CaseThreadMessage` carries
     `kind: "message" | "escalation"`, `buildCaseThread()` synthesizes the
-    event at its timestamp (same merge treatment `dedupePosts` gets), and
-    both surfaces render it through one shared
+    event at its timestamp (same merge treatment `dedupePosts` gets),
+    gated on the *stated reason* rather than on `escalatedAt` — the two
+    mean different things (`escalatedAt` is the time-in-escalation clock
+    basis, set by seeding/intake/severity bumps; `escalation_reason` is
+    written only when a customer actually escalated). Gating on the
+    timestamp invented an event for three seeded cases and attributed it
+    to customers who never escalated ("Escalated by {name} — No reason
+    given", two of them not even in `escalated` status); caught by the
+    user, decided with them to show no marker at all for those — so a
+    marker always has a reason to show. Both surfaces render it through
+    one shared
     `components/shared/escalation-marker.tsx` (centered marker, "Reason:
     …" beneath) so they can't drift apart on what an escalation looks
     like — only the title differs ("Escalated by {name}" in the console,
