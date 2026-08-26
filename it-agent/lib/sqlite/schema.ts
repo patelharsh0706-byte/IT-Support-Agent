@@ -79,6 +79,11 @@ export const serviceRequests = sqliteTable("service_request", {
   classificationIntent: text("classification_intent"),
   classificationConfidence: real("classification_confidence"),
   aiDraftReply: text("ai_draft_reply"),
+  // The customer's own words when they escalate — surfaced to the CSR in
+  // `conversation-context-sidebar.tsx` and as a chat message (see
+  // `escalateServiceRequest` in `queries.ts`). Distinct from
+  // `severity_changes.reason`, which is generic to any severity change.
+  escalationReason: text("escalation_reason"),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 })
@@ -124,10 +129,20 @@ export const chatMessages = sqliteTable("chat_messages", {
   chatSessionId: text("chat_session_id")
     .notNull()
     .references(() => chatSessions.id, { onDelete: "cascade" }),
-  authorRole: text("author_role", { enum: ["customer", "agent"] }).notNull(),
+  // "csr" added alongside the pre-existing "agent" (reserved for the future
+  // AI agent pipeline, `lib/agent/`, not built yet) so a human CSR reply is
+  // distinguishable from an eventual bot-authored one.
+  authorRole: text("author_role", {
+    enum: ["customer", "agent", "csr"],
+  }).notNull(),
   authorName: text("author_name").notNull(),
   content: text("content").notNull(),
   timestamp: text("timestamp").notNull(),
+  // CSR-only, never sent to a customer session (see `messages/route.ts`'s
+  // GET handler, which strips these before returning to a customer).
+  isPrivateNote: integer("is_private_note", { mode: "boolean" })
+    .notNull()
+    .default(false),
 })
 
 // Repacks `ActivityEvent` — shared by chat-message activity streams and

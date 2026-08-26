@@ -1,4 +1,4 @@
-import type { GrievanceCase } from "./types"
+import type { GrievanceCase, RealChatMessage } from "./types"
 
 export type ThreadAuthor = "customer" | "csr"
 
@@ -16,41 +16,65 @@ export interface CaseThreadMessage {
 }
 
 /**
- * Builds a case's message thread from its existing fields. This is the
- * single swap point for real message data: when a real thread exists,
- * replace this function's body and nothing else in the app needs to change.
+ * A persisted `chat_messages.author_role` narrowed to the two sides the
+ * thread renders. "agent" (the future AI pipeline, `lib/agent/`) renders
+ * outbound like a CSR — from the customer's side of the glass both are
+ * "someone from Amex replied"; the row keeps the finer distinction.
+ */
+function threadAuthor(authorRole: RealChatMessage["authorRole"]): ThreadAuthor {
+  return authorRole === "customer" ? "customer" : "csr"
+}
+
+/**
+ * Builds a case's message thread: its social-origin posts (when the case
+ * came in over a social channel) followed by every persisted
+ * `chat_messages` row, merged in timestamp order.
  *
  * Pure and stable (no `Date.now()`), so it's safe to call from a server
  * component and hydrates identically on the client.
  */
 export function buildCaseThread(grievanceCase: GrievanceCase): CaseThreadMessage[] {
-  if (grievanceCase.dedupePosts.length > 0) {
-    return [...grievanceCase.dedupePosts]
-      .sort((a, b) => a.postedAt.localeCompare(b.postedAt))
-      .map((post) => ({
-        id: post.id,
+  const originPosts: CaseThreadMessage[] = grievanceCase.dedupePosts.map((post) => ({
+    id: post.id,
+    caseId: grievanceCase.id,
+    author: "customer" as const,
+    authorName: grievanceCase.customerName,
+    body: post.excerpt,
+    timestamp: post.postedAt,
+    permalink: post.permalink,
+  }))
+
+  const persisted: CaseThreadMessage[] = grievanceCase.realChatMessages.map((message) => ({
+    id: message.id,
+    caseId: grievanceCase.id,
+    author: threadAuthor(message.authorRole),
+    authorName: message.authorName,
+    body: message.content,
+    timestamp: message.timestamp,
+    isPrivateNote: message.isPrivateNote,
+  }))
+
+  // Neither source has anything (a case raised through a channel that
+  // leaves no post and that nobody has written to yet) — a thread must
+  // never be empty, so synthesize one opening message from the summary.
+  if (originPosts.length === 0 && persisted.length === 0) {
+    return [
+      {
+        id: `${grievanceCase.id}_seed`,
         caseId: grievanceCase.id,
-        author: "customer" as const,
+        author: "customer",
         authorName: grievanceCase.customerName,
-        body: post.excerpt,
-        timestamp: post.postedAt,
-        permalink: post.permalink,
-      }))
+        body: grievanceCase.summary,
+        timestamp: grievanceCase.createdAt,
+      },
+    ]
   }
 
-  // No dedupe posts (today: amex_support / website_chatbot cases) — a
-  // thread must never be empty, so synthesize one opening message from
-  // the case summary.
-  return [
-    {
-      id: `${grievanceCase.id}_seed`,
-      caseId: grievanceCase.id,
-      author: "customer",
-      authorName: grievanceCase.customerName,
-      body: grievanceCase.summary,
-      timestamp: grievanceCase.createdAt,
-    },
-  ]
+  // Sorted by timestamp, with the id as a tiebreaker so two messages
+  // written in the same millisecond keep a stable order between renders.
+  return [...originPosts, ...persisted].sort(
+    (a, b) => a.timestamp.localeCompare(b.timestamp) || a.id.localeCompare(b.id)
+  )
 }
 
 /**
@@ -68,7 +92,12 @@ export function caseLastActivityAt(grievanceCase: GrievanceCase): string {
   return timestamps.reduce((latest, ts) => (ts > latest ? ts : latest))
 }
 
+/**
+ * Preview line for the conversation list. Private notes are skipped — the
+ * preview should read as the conversation, not as the team's internal
+ * commentary on it.
+ */
 export function casePreviewText(grievanceCase: GrievanceCase): string {
-  const thread = buildCaseThread(grievanceCase)
+  const thread = buildCaseThread(grievanceCase).filter((m) => !m.isPrivateNote)
   return thread[thread.length - 1]?.body ?? grievanceCase.summary
 }

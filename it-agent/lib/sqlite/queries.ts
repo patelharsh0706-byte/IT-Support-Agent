@@ -1,15 +1,17 @@
-import { and, desc, eq, inArray } from "drizzle-orm"
+import { and, asc, desc, eq, inArray } from "drizzle-orm"
 import { currentUser } from "@clerk/nextjs/server"
 import { cache } from "react"
 import { db } from "./client"
 import {
   agentActions,
+  chatMessages,
+  chatSessions,
   customers,
   serviceRequests,
   severityChanges,
   socialPosts,
 } from "./schema"
-import type { DashboardMetrics, GrievanceCase, Intent } from "@/lib/mock/types"
+import type { DashboardMetrics, GrievanceCase, Intent, MessageAuthorRole } from "@/lib/mock/types"
 
 // Resolves `customers.clerk_user_id` to the internal customer row, per
 // `feature-specs/06-project-api.md`'s Rules section and
@@ -102,6 +104,147 @@ export async function deleteServiceRequest(id: string, customerId: string) {
     .where(and(eq(serviceRequests.id, id), eq(serviceRequests.customerId, customerId)))
 }
 
+// --- Chat messages (customer <-> CSR), shared by both dashboards ---
+
+// A service request has at most one chat session by construction — every
+// caller reaches this through `insertChatMessage`, a single serialized path
+// per request. Two near-simultaneous first messages on the same ticket
+// could in theory double-insert a session (no unique index enforces this);
+// acceptable at this data volume for a prototype, not worth a migration.
+export async function getOrCreateChatSessionForServiceRequest(
+  serviceRequestId: string,
+  customerId: string,
+) {
+  const existing = await db.query.chatSessions.findFirst({
+    where: eq(chatSessions.serviceRequestId, serviceRequestId),
+  })
+  if (existing) return existing
+
+  const [created] = await db
+    .insert(chatSessions)
+    .values({
+      id: `sess_${crypto.randomUUID()}`,
+      customerId,
+      serviceRequestId,
+    })
+    .returning()
+  return created
+}
+
+export async function listChatMessagesForServiceRequest(serviceRequestId: string) {
+  const session = await db.query.chatSessions.findFirst({
+    where: eq(chatSessions.serviceRequestId, serviceRequestId),
+  })
+  if (!session) return []
+
+  return db.query.chatMessages.findMany({
+    where: eq(chatMessages.chatSessionId, session.id),
+    orderBy: asc(chatMessages.timestamp),
+  })
+}
+
+export async function insertChatMessage(params: {
+  serviceRequestId: string
+  customerId: string
+  authorRole: MessageAuthorRole
+  authorName: string
+  content: string
+  isPrivateNote?: boolean
+}) {
+  const session = await getOrCreateChatSessionForServiceRequest(
+    params.serviceRequestId,
+    params.customerId,
+  )
+  const [created] = await db
+    .insert(chatMessages)
+    .values({
+      id: `msg_${crypto.randomUUID()}`,
+      chatSessionId: session.id,
+      authorRole: params.authorRole,
+      authorName: params.authorName,
+      content: params.content,
+      timestamp: new Date().toISOString(),
+      isPrivateNote: params.isPrivateNote ?? false,
+    })
+    .returning()
+  return created
+}
+
+/** On a non-private CSR send, mirrors the reply-state side effect the old local-only UI used to fake. */
+export async function markServiceRequestReplied(serviceRequestId: string, csrName: string) {
+  await db
+    .update(serviceRequests)
+    .set({ replyState: "replied", contactedByCsrName: csrName, updatedAt: new Date().toISOString() })
+    .where(eq(serviceRequests.id, serviceRequestId))
+}
+
+/**
+ * Atomic escalate: bumps status/priority/severity, records the reason, and
+ * inserts a chat message so the CSR sees *why* right in the shared thread —
+ * not just an `escalated_at` timestamp.
+ */
+export async function escalateServiceRequest(
+  serviceRequestId: string,
+  reason: string,
+  customerId: string,
+  customerName: string,
+) {
+  return db.transaction(async (tx) => {
+    const existing = await tx.query.serviceRequests.findFirst({
+      where: eq(serviceRequests.id, serviceRequestId),
+    })
+    if (!existing) {
+      throw new Error(`escalateServiceRequest: no service_request ${serviceRequestId}`)
+    }
+
+    const now = new Date().toISOString()
+    const [updated] = await tx
+      .update(serviceRequests)
+      .set({
+        status: "escalated",
+        priority: "high",
+        currentSeverity: "high",
+        escalatedAt: now,
+        escalationReason: reason,
+        updatedAt: now,
+      })
+      .where(eq(serviceRequests.id, serviceRequestId))
+      .returning()
+
+    await tx.insert(severityChanges).values({
+      id: `sev_${crypto.randomUUID()}`,
+      serviceRequestId,
+      fromSeverity: existing.currentSeverity,
+      toSeverity: "high",
+      changedAt: now,
+      reason,
+    })
+
+    const session =
+      (await tx.query.chatSessions.findFirst({
+        where: eq(chatSessions.serviceRequestId, serviceRequestId),
+      })) ??
+      (
+        await tx
+          .insert(chatSessions)
+          .values({ id: `sess_${crypto.randomUUID()}`, customerId, serviceRequestId })
+          .returning()
+      )[0]
+
+    await tx.insert(chatMessages).values({
+      id: `msg_${crypto.randomUUID()}`,
+      chatSessionId: session.id,
+      authorRole: "customer",
+      authorName: customerName,
+      content: reason,
+      timestamp: now,
+      isPrivateNote: false,
+    })
+
+    return updated
+  })
+}
+
 // --- Admin/CSR console reads (06-project-api and 05-sqlite built the write
 // side + customer-scoped reads above; these are the CSR-facing reads added
 // in 07-wire-ui-api) ---
@@ -134,14 +277,28 @@ export const listGrievanceCases = cache(async (): Promise<GrievanceCase[]> => {
   const requestIds = requests.map((r) => r.id)
   const customerIds = [...new Set(requests.map((r) => r.customerId).filter((id) => id !== null))]
 
-  const [relatedCustomers, allSocialPosts, allSeverityChanges, allAgentActions] = await Promise.all([
+  const [
+    relatedCustomers,
+    allSocialPosts,
+    allSeverityChanges,
+    allAgentActions,
+    relatedChatSessions,
+  ] = await Promise.all([
     customerIds.length > 0
       ? db.select().from(customers).where(inArray(customers.id, customerIds))
       : Promise.resolve([]),
     db.select().from(socialPosts).where(inArray(socialPosts.serviceRequestId, requestIds)),
     db.select().from(severityChanges).where(inArray(severityChanges.serviceRequestId, requestIds)),
     db.select().from(agentActions).where(inArray(agentActions.serviceRequestId, requestIds)),
+    db.select().from(chatSessions).where(inArray(chatSessions.serviceRequestId, requestIds)),
   ])
+
+  const sessionIdToRequestId = new Map(relatedChatSessions.map((s) => [s.id, s.serviceRequestId]))
+  const sessionIds = relatedChatSessions.map((s) => s.id)
+  const allChatMessages =
+    sessionIds.length > 0
+      ? await db.select().from(chatMessages).where(inArray(chatMessages.chatSessionId, sessionIds))
+      : []
 
   const customerById = new Map(relatedCustomers.map((c) => [c.id, c]))
   const socialPostsByRequest = new Map<string, typeof allSocialPosts>()
@@ -162,6 +319,14 @@ export const listGrievanceCases = cache(async (): Promise<GrievanceCase[]> => {
     const list = agentActionsByRequest.get(action.serviceRequestId) ?? []
     list.push(action)
     agentActionsByRequest.set(action.serviceRequestId, list)
+  }
+  const chatMessagesByRequest = new Map<string, typeof allChatMessages>()
+  for (const message of allChatMessages) {
+    const requestId = sessionIdToRequestId.get(message.chatSessionId)
+    if (!requestId) continue
+    const list = chatMessagesByRequest.get(requestId) ?? []
+    list.push(message)
+    chatMessagesByRequest.set(requestId, list)
   }
 
   const now = Date.now()
@@ -186,6 +351,7 @@ export const listGrievanceCases = cache(async (): Promise<GrievanceCase[]> => {
       severityChangedRecently,
       createdAt: row.createdAt,
       escalatedAt: row.escalatedAt,
+      escalationReason: row.escalationReason,
       customerStatus: customer?.status ?? "unknown",
       customerVerified: row.customerVerified,
       contactedByCsrName: row.contactedByCsrName,
@@ -215,6 +381,14 @@ export const listGrievanceCases = cache(async (): Promise<GrievanceCase[]> => {
         timestamp: a.timestamp,
       })),
       aiDraftReply: row.aiDraftReply ?? undefined,
+      realChatMessages: (chatMessagesByRequest.get(row.id) ?? []).map((m) => ({
+        id: m.id,
+        authorRole: m.authorRole,
+        authorName: m.authorName,
+        content: m.content,
+        timestamp: m.timestamp,
+        isPrivateNote: m.isPrivateNote,
+      })),
     }
   })
 })

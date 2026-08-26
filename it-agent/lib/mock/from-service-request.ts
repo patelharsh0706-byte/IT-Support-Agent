@@ -1,7 +1,8 @@
-import type { serviceRequests } from "@/lib/sqlite/schema"
-import type { Ticket } from "./types"
+import type { chatMessages as chatMessagesTable, serviceRequests } from "@/lib/sqlite/schema"
+import type { ChatMessage, Ticket } from "./types"
 
 type ServiceRequestRow = typeof serviceRequests.$inferSelect
+type ChatMessageRow = typeof chatMessagesTable.$inferSelect
 
 /**
  * Narrows a `service_request` row (customer/CSR-agnostic, every column) down
@@ -19,6 +20,18 @@ export function toTicket(row: ServiceRequestRow): Ticket {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     escalatedAt: row.escalatedAt,
-    escalationReason: undefined,
+    escalationReason: row.escalationReason,
+  }
+}
+
+/** Same mapping boundary, for `chat_messages` rows returned by `/messages`. */
+export function toChatMessage(row: ChatMessageRow, ticketId: string): ChatMessage {
+  return {
+    id: row.id,
+    ticketId,
+    authorRole: row.authorRole,
+    authorName: row.authorName,
+    content: row.content,
+    timestamp: row.timestamp,
   }
 }

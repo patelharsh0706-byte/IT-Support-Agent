@@ -28,9 +28,10 @@ interface ReplyComposerProps {
   replyState: ReplyState
   aiDraftReply?: string
   contactedByCsrName: string | null
-  onSend: (finalText: string) => void
-  /** Private note never leaves the console — appended to the thread, never sent. */
-  onAddPrivateNote?: (note: string) => void
+  /** Resolves false when the send failed — the draft is kept so nothing is lost. */
+  onSend: (finalText: string) => Promise<boolean>
+  /** Private note is persisted CSR-side only — never delivered to the customer. */
+  onAddPrivateNote?: (note: string) => Promise<boolean>
   className?: string
 }
 
@@ -38,8 +39,9 @@ interface ReplyComposerProps {
  * Agent drafts, human sends only — there is no auto-send path and no
  * configuration flag that could create one (R11). Sending records the
  * final text; if the CSR edited the draft, both versions would be stored
- * server-side (not modeled here, mock data only). The Private Note tab has
- * no send path at all — it stays local to the console in every reply state.
+ * server-side (not modeled here). Both tabs persist through
+ * `POST /api/service-requests/[id]/messages`; the note tab sets
+ * `isPrivateNote`, which that route strips from every customer read.
  */
 export function ReplyComposer({
   replyState,
@@ -51,6 +53,32 @@ export function ReplyComposer({
 }: ReplyComposerProps) {
   const [replyDraft, setReplyDraft] = useState(aiDraftReply ?? "")
   const [noteDraft, setNoteDraft] = useState("")
+  const [pending, setPending] = useState<"reply" | "note" | null>(null)
+  // Keyed by tab so a failed note never surfaces its error over the reply tab.
+  const [error, setError] = useState<{ kind: "reply" | "note"; message: string } | null>(null)
+
+  async function submit(kind: "reply" | "note") {
+    const draft = kind === "reply" ? replyDraft.trim() : noteDraft.trim()
+    if (draft.length === 0 || pending) return
+    setPending(kind)
+    setError(null)
+    const ok =
+      kind === "reply" ? await onSend(draft) : ((await onAddPrivateNote?.(draft)) ?? false)
+    setPending(null)
+    if (!ok) {
+      setError({
+        kind,
+        message:
+          kind === "reply"
+            ? "Could not send the reply. The draft is still here — try again."
+            : "Could not save the note. It is still here — try again.",
+      })
+      return
+    }
+    // Cleared only on a confirmed write, so a failed send never loses text.
+    if (kind === "reply") setReplyDraft("")
+    else setNoteDraft("")
+  }
 
   return (
     <div className={cn("border-t border-border bg-surface p-4", className)}>
@@ -87,17 +115,19 @@ export function ReplyComposer({
               placeholder="Draft a reply…"
               className="min-h-24"
             />
+            {error?.kind === "reply" && pending === null ? (
+              <p role="alert" className="text-[13px] text-state-error">
+                {error.message}
+              </p>
+            ) : null}
             <Button
               type="button"
               className="self-end"
-              disabled={replyDraft.trim().length === 0}
-              onClick={() => {
-                onSend(replyDraft.trim())
-                setReplyDraft("")
-              }}
+              disabled={replyDraft.trim().length === 0 || pending !== null}
+              onClick={() => void submit("reply")}
             >
               <SendHorizontal data-icon="inline-start" />
-              Send
+              {pending === "reply" ? "Sending…" : "Send"}
             </Button>
           </div>
         </TabsContent>
@@ -114,17 +144,19 @@ export function ReplyComposer({
               placeholder="Leave a note for the team…"
               className="min-h-24"
             />
+            {error?.kind === "note" && pending === null ? (
+              <p role="alert" className="text-[13px] text-state-error">
+                {error.message}
+              </p>
+            ) : null}
             <Button
               type="button"
               variant="outline"
               className="self-end"
-              disabled={noteDraft.trim().length === 0}
-              onClick={() => {
-                onAddPrivateNote?.(noteDraft.trim())
-                setNoteDraft("")
-              }}
+              disabled={noteDraft.trim().length === 0 || pending !== null}
+              onClick={() => void submit("note")}
             >
-              Add note
+              {pending === "note" ? "Saving…" : "Add note"}
             </Button>
           </div>
         </TabsContent>

@@ -8,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
 interface ComposerProps {
-  onSend: (content: string) => void
+  /** Resolves false when the send failed — the text is kept so nothing is lost. */
+  onSend: (content: string) => Promise<boolean>
   disabled?: boolean
   className?: string
 }
@@ -16,11 +17,21 @@ interface ComposerProps {
 /** Pinned composer: bordered container, textarea, icon actions, send. */
 export function Composer({ onSend, disabled, className }: ComposerProps) {
   const [value, setValue] = useState("")
+  const [isSending, setIsSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  function handleSend() {
+  async function handleSend() {
     const trimmed = value.trim()
-    if (!trimmed) return
-    onSend(trimmed)
+    if (!trimmed || isSending || disabled) return
+    setIsSending(true)
+    setError(null)
+    const ok = await onSend(trimmed)
+    setIsSending(false)
+    if (!ok) {
+      setError("Could not send. Your message is still here — try again.")
+      return
+    }
+    // Cleared only on a confirmed write, so a failed send never loses text.
     setValue("")
   }
 
@@ -42,11 +53,11 @@ export function Composer({ onSend, disabled, className }: ComposerProps) {
             if (event.nativeEvent.isComposing || event.keyCode === 229) return
             if (event.key === "Enter" && !event.shiftKey) {
               event.preventDefault()
-              handleSend()
+              void handleSend()
             }
           }}
           placeholder="Message the servicing agent…"
-          disabled={disabled}
+          disabled={disabled || isSending}
           className="min-h-16 resize-none border-none bg-transparent px-3 py-2 shadow-none focus-visible:ring-0"
         />
         <div className="flex items-center justify-between px-3 pb-2">
@@ -74,13 +85,18 @@ export function Composer({ onSend, disabled, className }: ComposerProps) {
             type="button"
             size="icon-sm"
             aria-label="Send message"
-            onClick={handleSend}
-            disabled={disabled || value.trim().length === 0}
+            onClick={() => void handleSend()}
+            disabled={disabled || isSending || value.trim().length === 0}
           >
             <SendHorizontal />
           </Button>
         </div>
       </div>
+      {error ? (
+        <p role="alert" className="mt-2 text-center text-[11px] text-state-error">
+          {error}
+        </p>
+      ) : null}
       <p className="mt-2 text-center text-[11px] text-muted-foreground">
         The servicing agent can make mistakes. Verify important details.
       </p>

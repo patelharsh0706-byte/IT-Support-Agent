@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 
 import { ConversationHeader } from "@/components/admin/conversation-header"
 import { ConversationThread } from "@/components/admin/conversation-thread"
@@ -11,10 +12,9 @@ import type { GrievanceCase } from "@/lib/mock/types"
 
 interface ConversationPaneProps {
   grievanceCase: GrievanceCase
-  currentCsrName: string
 }
 
-export function ConversationPane({ grievanceCase, currentCsrName }: ConversationPaneProps) {
+export function ConversationPane({ grievanceCase }: ConversationPaneProps) {
   const [replyState, setReplyState] = useState(grievanceCase.replyState)
   const [contactedByCsrName, setContactedByCsrName] = useState(
     grievanceCase.contactedByCsrName
@@ -26,36 +26,54 @@ export function ConversationPane({ grievanceCase, currentCsrName }: Conversation
   // Resolved is distinct from replyState: resolving a case doesn't send a
   // reply, and sending a reply doesn't resolve the case.
   const [isResolved, setIsResolved] = useState(grievanceCase.replyState === "replied")
+  const router = useRouter()
 
-  function handleSend(text: string) {
+  /**
+   * Persists one CSR message and appends the row the server actually
+   * wrote — id and timestamp come back from SQLite rather than being
+   * invented client-side, so a refresh renders the same thread.
+   */
+  async function postMessage(content: string, isPrivateNote: boolean) {
+    const response = await fetch(`/api/service-requests/${grievanceCase.id}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, isPrivateNote }),
+    }).catch(() => null)
+    if (!response?.ok) return null
+
+    const { message } = await response.json()
     setMessages((prev) => [
       ...prev,
       {
-        id: `${grievanceCase.id}_msg_${Date.now()}`,
+        id: message.id,
         caseId: grievanceCase.id,
         author: "csr",
-        authorName: currentCsrName,
-        body: text,
-        timestamp: new Date().toISOString(),
+        authorName: message.authorName,
+        body: message.content,
+        timestamp: message.timestamp,
+        isPrivateNote: message.isPrivateNote,
       },
     ])
-    setReplyState("replied")
-    setContactedByCsrName(currentCsrName)
+    // Re-reads the server components around this pane (conversation list
+    // preview, queue table, nav counts) so they stop disagreeing with the
+    // thread the CSR is looking at.
+    router.refresh()
+    return message
   }
 
-  function handleAddPrivateNote(note: string) {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `${grievanceCase.id}_note_${Date.now()}`,
-        caseId: grievanceCase.id,
-        author: "csr",
-        authorName: currentCsrName,
-        body: note,
-        timestamp: new Date().toISOString(),
-        isPrivateNote: true,
-      },
-    ])
+  async function handleSend(text: string) {
+    const message = await postMessage(text, false)
+    if (!message) return false
+    // Mirrors the route's own side effect: a public send marks the case
+    // replied and stamps the CSR who sent it.
+    setReplyState("replied")
+    setContactedByCsrName(message.authorName)
+    return true
+  }
+
+  async function handleAddPrivateNote(note: string) {
+    // A note is deliberately not a reply — it must not move `replyState`.
+    return (await postMessage(note, true)) !== null
   }
 
   function handleResolve() {

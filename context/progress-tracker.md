@@ -518,7 +518,7 @@ change.
     to the real project API" template (Liveblocks room IDs, owned/shared
     projects, workspace navigation) — none of that exists in this app.
     Reframed onto `service_request` and rewritten in
-    `feature-specs/07-wire-ui-api`, covering both the customer dashboard
+    `feature-specs/07-wire-ui-api.md`, covering both the customer dashboard
     and the admin console per explicit user direction.
   - **Scope, decided with the user:** customer side is list + create only
     (rename/delete dropped — doesn't fit real support-ticket UX, a
@@ -579,6 +579,63 @@ change.
   - **Not done in this unit:** CSR reply/private-note persistence (new
     table needed, deferred); the `closedAccountOpenGrievanceCount` schema
     gap remains open (see Open Questions).
+
+- **08-persisted-messages — CSR replies, private notes, and real escalation**
+  - Closes the gap `07-wire-ui-api` left open. No new table was needed:
+    `chat_messages` already existed from `05-sqlite` and took two columns
+    (`is_private_note`, and `author_role` widened to
+    `customer | agent | csr`), plus `service_request.escalation_reason`.
+    Migration `0003_fixed_jackpot`, applied to `local.db`.
+  - **Invariant 5 upheld.** Every write is human-initiated (Send / Add
+    note / Escalate) — no auto-send path and no flag that creates one.
+    `"csr"` was added alongside the pre-existing `"agent"` role precisely
+    so a human reply stays distinguishable from an eventual bot-authored
+    one in the audit trail.
+  - **API (new):** `POST`/`GET /api/service-requests/[id]/messages` —
+    customer writes only to their own case, CSR to any; `isPrivateNote`
+    honored only for a CSR sender (never trusted from a customer), and
+    private notes stripped server-side from every customer read. A
+    non-private CSR send also marks the case replied and stamps
+    `contacted_by_csr_name`. `POST .../escalate` — one transaction:
+    status/priority/severity bumped, `escalated_at` and
+    `escalation_reason` recorded, a `severity_changes` row written, and
+    the reason inserted into the thread as a customer message so the CSR
+    sees *why* in the conversation, not just a timestamp. Authorship is
+    always resolved server-side, never read from the request body.
+  - **`lib/mock/case-thread.ts` — the swap point fired.**
+    `buildCaseThread()` now merges social-origin `dedupePosts` with the
+    case's persisted `realChatMessages` in timestamp order, synthesizing
+    a seed message only when both are empty. `casePreviewText()` skips
+    private notes — the list should preview the conversation, not the
+    team's internal commentary on it.
+  - **UI:** `conversation-pane.tsx` POSTs and appends the row the server
+    wrote (server id/timestamp, not client-invented), then
+    `router.refresh()` so list preview, queue, and nav counts stop
+    disagreeing with the open thread — its `currentCsrName` prop is gone,
+    the name comes back from the write. `reply-composer.tsx` and
+    `editor/composer.tsx` take `onSend: () => Promise<boolean>` and clear
+    the draft only on a confirmed write, so a failed send never loses
+    text. `customer-dashboard.tsx` sends and escalates for real, loading
+    each thread on selection rather than in an effect (no cascading
+    render — `react-hooks/set-state-in-effect` caught the first attempt);
+    the first ticket's thread is server-rendered in
+    `app/customer/dashboard/page.tsx`, private notes filtered there too.
+  - Verified: `npx tsc --noEmit`, `npm run lint`, `npm run build` all
+    clean. Backend round-trip exercised directly against a throwaway copy
+    of `local.db` (`tsx` script, `TURSO_DATABASE_URL` pointed at the
+    copy): customer message + private note + CSR reply persist and read
+    back, customer-visible count excludes the note (2 of 3), escalate
+    sets `status=escalated`/`priority=high`/`escalated_at` and writes both
+    the `severity_changes` row and the thread message, and
+    `buildCaseThread()` renders all four in order. Unauthenticated
+    requests still gate correctly (page routes 307 to sign-in, the
+    messages route returns 401). **Not verified in-browser** — a
+    signed-in click-through of send/note/escalate is still owed, same as
+    `07-wire-ui-api`.
+  - **Not done in this unit:** the AI-authored `"agent"` role is defined
+    but nothing writes it yet (that's the `lib/agent/` pipeline);
+    resolving a case still doesn't persist (`isResolved` remains local
+    state in `conversation-pane.tsx`).
 
 ## In Progress
 
@@ -756,11 +813,10 @@ change.
   stay built and tested (`06-project-api`), just not exposed to
   customers. If a real need for either surfaces later, it's a UI-only
   addition — no backend work required.
-- **CSR reply/private-note persistence deferred, 2026-08-26.** Sending a
-  reply or private note remains local React state only, same as before
-  `07-wire-ui-api`. It needs a new messages table and touches Invariant
-  5 (human-send-only) carefully — decided with the user to keep this
-  unit read-only rather than fold persistence in as a side effect.
+- **CSR reply/private-note persistence deferred, 2026-08-26 —
+  superseded the same day by `08-persisted-messages`.** It turned out to
+  need no new table: `chat_messages` already existed and took two
+  columns. Invariant 5 is untouched — every send is still human-initiated.
 - **`severityChangedRecently` and `escalationsPastThreshold` use a
   24-hour placeholder threshold, 2026-08-26.** Neither threshold was
   defined anywhere in the codebase before `07-wire-ui-api` — a
