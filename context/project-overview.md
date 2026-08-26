@@ -41,7 +41,8 @@ Priority is the issue's declared default and may be raised by the classifier's s
 ### Chat & Agent Activity
 
 - Single chat interface for submitting and resolving servicing requests
-- Live "Agent Activity" panel showing intent, priority, planned action, execution status, and verification result as they happen (streamed)
+- Live "Agent Activity" panel — CSR-facing — showing intent, priority, planned action, execution status, and verification result as they happen (streamed)
+- Customer-facing Ticket Status panel showing the ticket lifecycle and an "escalate to admin" action, in place of agent telemetry
 
 ### Servicing Tools
 
@@ -89,7 +90,7 @@ One tool registry, partitioned into **capability scopes** — each intent may on
 ## Success Criteria
 
 1. A signed-in customer can complete each of the six supported issues fully through chat, with the database reflecting the change — dispute issues confirm **initiation**, not instant resolution.
-2. The Agent Activity panel visibly streams intent, priority, tool execution, and verification in real time during a demo.
+2. The Agent Activity panel in the CSR console visibly streams intent, priority, tool execution, and verification during a demo. The customer side shows the same request as a plain-language Ticket Status timeline (raised / in progress / escalated / resolved) rather than tool-call detail.
 3. A request outside the six issues, or a failed verification, is correctly escalated rather than silently failing — and a CSR can see that escalation, with the tool calls that led to it, in the console.
 4. A social grievance (seeded from fixtures) is triaged, deduplicated against a repeat post, and appears in the CSR queue with its age and current severity — and can only be replied to by an explicit human send.
 5. The dashboard reports at least one customer whose account shows `closed` while a grievance was open, demonstrating the retention-cost metric with real seed data.

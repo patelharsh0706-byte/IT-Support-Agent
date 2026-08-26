@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { auth, currentUser } from "@clerk/nextjs/server";
 
 type Role = "customer" | "csr";
 
@@ -29,4 +29,16 @@ export async function requireCSR() {
     throw new Error("Forbidden: csr role required");
   }
   return session;
+}
+
+/**
+ * The signed-in CSR's display name, for stamping `contactedByCsrName` and
+ * message authorship. Replaces the old hardcoded `lib/mock/current-csr.ts`
+ * constant — no CSR identity table exists in the schema, so this reads
+ * straight from the Clerk profile (same pattern as `resolveCustomer()`).
+ */
+export async function requireCsrName() {
+  await requireCSR();
+  const profile = await currentUser();
+  return profile?.fullName ?? profile?.primaryEmailAddress?.emailAddress ?? "CSR";
 }

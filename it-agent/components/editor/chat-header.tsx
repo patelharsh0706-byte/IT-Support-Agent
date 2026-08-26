@@ -1,12 +1,7 @@
 import { PriorityBadge } from "@/components/shared/priority-badge"
-import type { Intent, Ticket } from "@/lib/mock/types"
+import { intentLabelFor } from "@/lib/mock/intent-labels"
+import type { Ticket } from "@/lib/mock/types"
 import { cn } from "@/lib/utils"
-
-const intentLabel: Record<Intent, string> = {
-  card_unblock_activation: "Card Servicing",
-  unrecognized_transaction: "Transaction & Dispute Servicing",
-  update_contact_info: "Account & Profile Servicing",
-}
 
 interface ChatHeaderProps {
   ticket: Ticket | null
@@ -29,7 +24,7 @@ export function ChatHeader({ ticket, className }: ChatHeaderProps) {
               {ticket.title}
             </p>
             <p className="truncate text-[13px] text-muted-foreground">
-              {intentLabel[ticket.intent]}
+              {intentLabelFor(ticket.intent)}
             </p>
           </div>
           <PriorityBadge priority={ticket.priority} />

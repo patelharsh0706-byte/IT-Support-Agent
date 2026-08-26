@@ -7,14 +7,14 @@ import { ConversationThread } from "@/components/admin/conversation-thread"
 import { ConversationContextSidebar } from "@/components/admin/conversation-context-sidebar"
 import { ReplyComposer } from "@/components/admin/reply-composer"
 import { buildCaseThread, type CaseThreadMessage } from "@/lib/mock/case-thread"
-import { currentCsrName } from "@/lib/mock/current-csr"
 import type { GrievanceCase } from "@/lib/mock/types"
 
 interface ConversationPaneProps {
   grievanceCase: GrievanceCase
+  currentCsrName: string
 }
 
-export function ConversationPane({ grievanceCase }: ConversationPaneProps) {
+export function ConversationPane({ grievanceCase, currentCsrName }: ConversationPaneProps) {
   const [replyState, setReplyState] = useState(grievanceCase.replyState)
   const [contactedByCsrName, setContactedByCsrName] = useState(
     grievanceCase.contactedByCsrName

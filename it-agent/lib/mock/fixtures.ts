@@ -44,6 +44,9 @@ export const tickets: Ticket[] = [
     status: "escalated",
     createdAt: "2026-08-20T11:30:00Z",
     updatedAt: "2026-08-22T14:15:00Z",
+    escalatedAt: "2026-08-22T14:15:00Z",
+    escalationReason:
+      "The agent closed this twice but the second charge is still on my statement.",
   },
   {
     id: "tkt_5",

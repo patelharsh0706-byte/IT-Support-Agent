@@ -460,6 +460,126 @@ change.
     clean; confirmed the new formatter pair produces a deterministic
     string not dependent on locale-specific connector data.
 
+- **04-project-dialogs (revision) — customer Ticket Status panel replaces
+  the customer-side Agent Activity panel**
+  - `components/editor/agent-activity-panel.tsx` deleted. The customer
+    right column is now `ticket-status-panel.tsx`: status + priority
+    badges, servicing area, a 4-step progress track
+    (Raised → In progress → Escalated → Resolved), the escalation note,
+    and a pinned "Escalate to admin" action bar. Same `<aside>` geometry
+    as the panel it replaces, so the column widths are unchanged.
+  - `components/shared/activity-panel.tsx` / `activity-event-row.tsx`
+    untouched — the CSR case-detail tool-call log still uses them. Only
+    the doc comment changed to stop describing a customer-side consumer.
+  - New `components/shared/ticket-status-badge.tsx` exports both the badge
+    and `ticketStatusLabel`, the single source of truth for the
+    customer-facing labels. `ticket-sidebar.tsx` rows use it in place of
+    the raw de-underscored status text.
+  - `TicketStatus` deliberately keeps its stored values
+    (`open | in_progress | resolved | escalated`) — "Raised" is a label,
+    not a new state, so the union still mirrors `service_request.status`.
+  - `Ticket` gained optional `escalatedAt` / `escalationReason`
+    (`escalatedAt` mirrors the existing `service_request.escalated_at`
+    column). `tkt_4` in the fixtures carries both so the populated state
+    renders on load.
+  - Escalation is a dialog (reused `EditorDialog` + `Textarea`) that
+    requires a reason, flips the ticket to `escalated`, stamps
+    `escalatedAt`, and appends an agent message to the thread. Local
+    `useState` only — no API call, per the 04 spec boundary.
+  - `intentLabel` lifted out of `chat-header.tsx` into
+    `lib/mock/intent-labels.ts` and shared with the new panel;
+    `intentLabelFor()` guards the null intent the real schema allows.
+  - Timeline steps are stamped only where a real timestamp exists: Raised
+    from `createdAt`, Escalated from `escalatedAt`, the current step from
+    `updatedAt`. A passed step with no stored time of its own shows an em
+    dash rather than borrowing `createdAt` — a resolved ticket must not
+    claim it went in-progress the instant it was raised.
+  - A guidance note sits above the escalate button: the three supported
+    request types go to the agent in the chat, escalation is for urgent or
+    unresolved cases. It renders only while escalation is available — when
+    the button is disabled the slot carries the state caption instead, so
+    the two never contradict each other. Placed in the panel footer rather
+    than under the composer, which already carries the "agent can make
+    mistakes" disclaimer.
+  - Docs synced: `feature-specs/04-project-dialogs.md` (panel anatomy,
+    the timestamp rule, and the guidance note),
+    `context/ui-context.md` (right-panel pattern),
+    `context/project-overview.md` (success criterion 2 and the feature
+    bullet now scope Agent Activity to the CSR console).
+  - Verified: `npx tsc --noEmit`, `npm run lint`, `npm run build` all
+    clean; panel markup confirmed against the prerendered
+    `.next/server/app/customer/dashboard.html` (title, 4-step track with
+    tkt_3's stamps, guidance note, no "Agent Activity" anywhere). The
+    click-through (submit a reason → badge flips in panel and sidebar)
+    was not exercised — the route is Clerk-protected.
+
+- **07-wire-ui-api — customer dashboard + admin console wired to real SQLite data**
+  - Spec was pasted as a generic "wire the editor home sidebar and dialogs
+    to the real project API" template (Liveblocks room IDs, owned/shared
+    projects, workspace navigation) — none of that exists in this app.
+    Reframed onto `service_request` and rewritten in
+    `feature-specs/07-wire-ui-api`, covering both the customer dashboard
+    and the admin console per explicit user direction.
+  - **Scope, decided with the user:** customer side is list + create only
+    (rename/delete dropped — doesn't fit real support-ticket UX, a
+    customer editing/deleting their own case's audit trail is out of
+    place in a servicing/compliance demo; the backend routes from
+    `06-project-api` stay built, just not customer-facing). Admin side is
+    read-only (sending a reply/private note stays local-state only —
+    persisting CSR messages needs a new table and touches Invariant 5
+    carefully, deferred to its own future unit). Dashboard: 3 of 4
+    metrics real, `closedAccountOpenGrievanceCount` explicitly flagged
+    "Not yet available" rather than faked (schema genuinely can't derive
+    it — see Open Questions).
+  - **Customer side:** `app/customer/dashboard/page.tsx` is now an async
+    server component (`requireCustomer()` → `resolveCustomer()` →
+    `listServiceRequestsForCustomer()`, all pre-existing) rendering the
+    moved client component `components/customer/customer-dashboard.tsx`.
+    `lib/mock/from-service-request.ts` (new) — `toTicket()`, the DB-row
+    → `Ticket` mapping boundary. `Ticket.intent` widened to
+    `Intent | null`. `hooks/useServiceRequestActions.ts` (new `hooks/`
+    directory) — create-only, `POST /api/service-requests`.
+  - **Admin side:** new reads in `lib/sqlite/queries.ts` —
+    `listGrievanceCases()` (every `service_request` row across all
+    channels, assembled with `customers`/`social_posts`/
+    `severity_changes`/`agent_actions` into the `GrievanceCase` shape;
+    no `relations()` declared on the schema, so this joins in JS rather
+    than Drizzle's nested `with:` API — fine at this data volume),
+    `getGrievanceCaseDetail(id)`, `computeDashboardMetrics()`. Both
+    `severityChangedRecently` and `escalationsPastThreshold` use a
+    documented 24-hour placeholder threshold — none was defined anywhere
+    in the codebase before this.
+  - **CSR identity:** `lib/mock/current-csr.ts`'s hardcoded
+    `currentCsrName` constant is deleted. `lib/auth/session.ts`'s new
+    `requireCsrName()` resolves the real signed-in CSR's name from the
+    Clerk profile — no new DB table needed, since `contactedByCsrName`
+    was already free-text, not a foreign key.
+    `lib/admin/conversation-views.ts`'s `matchesAssignment()`/
+    `filterCases()`/`countByAssignment()` now take `currentCsrName` as a
+    parameter instead of importing the mock constant.
+  - Wired: `app/admin/(console)/layout.tsx` (nav-rail counts),
+    `.../conversations/layout.tsx` (list pane), `.../conversations/[id]/
+    page.tsx` (case detail), `.../reports/grievances/page.tsx` (queue),
+    `.../reports/dashboard/page.tsx` (metrics). The two reports pages
+    carry `export const dynamic = "force-dynamic"` — neither calls a
+    Next.js dynamic API on its own, so without this Next statically
+    prerendered them at build time and froze the DB read at build time,
+    caught by checking the build's route table (both showed `○` Static
+    instead of `ƒ` Dynamic before the fix).
+  - Verified: `npx tsc --noEmit`, `npm run lint`, `npm run build` all
+    clean; build's route table confirms every touched route is now `ƒ`
+    Dynamic. Unauthenticated requests to all four newly-wired page
+    routes still correctly redirect (proxy.ts unaffected). Live
+    sign-in-and-click-through verification (customer create round-trip,
+    admin conversation list/detail against real seed data, the "Mine"
+    filter against a real CSR name, the dashboard's 4th tile showing
+    "Not yet available") was not re-exercised in this session — flagged
+    for the user to confirm in-browser, same as `06-project-api`'s
+    verification pattern.
+  - **Not done in this unit:** CSR reply/private-note persistence (new
+    table needed, deferred); the `closedAccountOpenGrievanceCount` schema
+    gap remains open (see Open Questions).
+
 ## In Progress
 
 - None.
@@ -488,14 +608,6 @@ change.
   (case bridge), S5 (CSR queue + case detail). S8 (dashboard) is
   confirmed in-scope, not optional — see the plan's Effort and Sequencing
   section before cutting anything under time pressure.
-- Wire the `04-project-dialogs` UI (built, mock data only) to real data
-  now that `lib/sqlite/` exists: replace `lib/mock/fixtures.ts` reads in
-  the customer dashboard and the `/admin/conversations*` /
-  `/admin/reports/*` routes with real queries, and add the
-  `lib/sqlite/queries.ts` dashboard-metrics functions noted above.
-  `lib/mock/case-thread.ts`'s `buildCaseThread()` is the single swap
-  point for real message data; the mock types in `lib/mock/types.ts`
-  were shaped to match the schema for this.
 - Real severity/priority design tokens: `severity-badge.tsx` /
   `priority-badge.tsx` currently reuse the 3 existing state tokens
   (confirmed with the user as a stopgap, not a final design decision).
@@ -550,6 +662,16 @@ change.
   (`bg-surface`, `bg-subtle`, `bg-accent-soft`, `bg-action-neutral`,
   `text-state-success`, `text-state-pending`, `text-state-error`) so the
   agent-activity status colours can be applied without hardcoded hex.
+- Customer-facing surfaces never show tool-call detail. Agent telemetry
+  (stage / status / mono parameters) is CSR-only; the customer sees a
+  plain-language ticket lifecycle instead. Reason: the mono detail lines
+  are operator diagnostics — useful to a CSR, noise to a cardmember — and
+  the customer's real question is "where is my ticket", which the status
+  timeline answers directly.
+- Status display labels are decoupled from stored status values. The
+  stored union mirrors the DB column; `ticketStatusLabel` maps it to
+  customer wording ("open" → "Raised"). Reason: keeps the eventual swap
+  from fixtures to `service_request` rows a drop-in.
 - `components/editor/` holds chrome composed from the vendored primitives.
   The `components/ui/*` files stay untouched — every editor-specific style
   is applied at the call site via `className`, so re-running the shadcn CLI
@@ -626,6 +748,32 @@ change.
   to the sign-in page) was written for page navigation; a fetch client
   hitting an API route needs a real status code, not a `307` to HTML.
   Page routes are unaffected — only the `/api/*` branch changed.
+- **Customer-side rename/delete UI dropped from `07-wire-ui-api`'s scope,
+  2026-08-26.** The pasted generic template included them (a
+  document/project list pattern); the user judged, and this was
+  confirmed, that editing/deleting a service request's title or audit
+  trail doesn't fit a servicing-and-compliance demo. The backend routes
+  stay built and tested (`06-project-api`), just not exposed to
+  customers. If a real need for either surfaces later, it's a UI-only
+  addition — no backend work required.
+- **CSR reply/private-note persistence deferred, 2026-08-26.** Sending a
+  reply or private note remains local React state only, same as before
+  `07-wire-ui-api`. It needs a new messages table and touches Invariant
+  5 (human-send-only) carefully — decided with the user to keep this
+  unit read-only rather than fold persistence in as a side effect.
+- **`severityChangedRecently` and `escalationsPastThreshold` use a
+  24-hour placeholder threshold, 2026-08-26.** Neither threshold was
+  defined anywhere in the codebase before `07-wire-ui-api` — a
+  demo-reasonable default, documented in `lib/sqlite/queries.ts` and
+  here rather than silently guessed. Revisit if a real product answer
+  for either surfaces.
+- **CSR identity comes from the live Clerk session, not a mock constant,
+  2026-08-26.** `lib/mock/current-csr.ts` (`currentCsrName = "J.
+  Alvarez"`) is deleted; `lib/auth/session.ts`'s `requireCsrName()`
+  resolves the real signed-in CSR's display name instead. No new schema
+  needed — `service_request.contacted_by_csr_name` was already a
+  free-text column, not a foreign key to some CSR table that doesn't
+  exist.
 
 ## Session Notes
 
