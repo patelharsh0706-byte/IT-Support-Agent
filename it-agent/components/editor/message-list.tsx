@@ -1,7 +1,8 @@
 import { Separator } from "@/components/ui/separator"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { MessageItem } from "@/components/editor/message-item"
-import type { ChatMessage } from "@/lib/mock/types"
+import { EscalationMarker } from "@/components/shared/escalation-marker"
+import type { TicketThreadEntry } from "@/lib/mock/ticket-thread"
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", {
   month: "long",
@@ -18,11 +19,12 @@ function dateKey(timestamp: string) {
 }
 
 interface MessageListProps {
-  messages: ChatMessage[]
+  /** Messages and case events together — see `buildTicketThread()`. */
+  entries: TicketThreadEntry[]
 }
 
-export function MessageList({ messages }: MessageListProps) {
-  if (messages.length === 0) {
+export function MessageList({ entries }: MessageListProps) {
+  if (entries.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center px-4 py-10 text-center text-[13px] text-muted-foreground">
         No messages yet.
@@ -30,14 +32,14 @@ export function MessageList({ messages }: MessageListProps) {
     )
   }
 
-  const groups: { date: string; messages: ChatMessage[] }[] = []
-  for (const message of messages) {
-    const key = dateKey(message.timestamp)
+  const groups: { date: string; entries: TicketThreadEntry[] }[] = []
+  for (const entry of entries) {
+    const key = dateKey(entry.timestamp)
     const lastGroup = groups[groups.length - 1]
     if (lastGroup?.date === key) {
-      lastGroup.messages.push(message)
+      lastGroup.entries.push(entry)
     } else {
-      groups.push({ date: key, messages: [message] })
+      groups.push({ date: key, entries: [entry] })
     }
   }
 
@@ -49,13 +51,22 @@ export function MessageList({ messages }: MessageListProps) {
             <div className="flex items-center gap-3 py-3">
               <Separator className="flex-1" />
               <span className="shrink-0 text-[13px] text-muted-foreground">
-                {dateFormatter.format(new Date(group.messages[0].timestamp))}
+                {dateFormatter.format(new Date(group.entries[0].timestamp))}
               </span>
               <Separator className="flex-1" />
             </div>
-            {group.messages.map((message) => (
-              <MessageItem key={message.id} message={message} />
-            ))}
+            {group.entries.map((entry) =>
+              entry.kind === "escalation" ? (
+                <EscalationMarker
+                  key={entry.id}
+                  title="You escalated this ticket"
+                  reason={entry.reason}
+                  timestamp={entry.timestamp}
+                />
+              ) : (
+                <MessageItem key={entry.id} message={entry.message} />
+              )
+            )}
           </div>
         ))}
       </div>

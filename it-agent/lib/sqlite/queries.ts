@@ -179,16 +179,18 @@ export async function markServiceRequestReplied(serviceRequestId: string, csrNam
 }
 
 /**
- * Atomic escalate: bumps status/priority/severity, records the reason, and
- * inserts a chat message so the CSR sees *why* right in the shared thread —
- * not just an `escalated_at` timestamp.
+ * Atomic escalate: bumps status/priority/severity and records the reason on
+ * the `service_request` row itself.
+ *
+ * The reason is deliberately *not* written into `chat_messages`. An
+ * escalation is a case event, not something the customer said in the
+ * conversation — stored as a message it renders as an ordinary reply and
+ * the "this case was escalated, here's why" signal disappears into the
+ * thread. `buildCaseThread()` synthesizes the event into the thread from
+ * `escalated_at` + `escalation_reason` instead, keeping one source of
+ * truth that can't drift from the row.
  */
-export async function escalateServiceRequest(
-  serviceRequestId: string,
-  reason: string,
-  customerId: string,
-  customerName: string,
-) {
+export async function escalateServiceRequest(serviceRequestId: string, reason: string) {
   return db.transaction(async (tx) => {
     const existing = await tx.query.serviceRequests.findFirst({
       where: eq(serviceRequests.id, serviceRequestId),
@@ -218,27 +220,6 @@ export async function escalateServiceRequest(
       toSeverity: "high",
       changedAt: now,
       reason,
-    })
-
-    const session =
-      (await tx.query.chatSessions.findFirst({
-        where: eq(chatSessions.serviceRequestId, serviceRequestId),
-      })) ??
-      (
-        await tx
-          .insert(chatSessions)
-          .values({ id: `sess_${crypto.randomUUID()}`, customerId, serviceRequestId })
-          .returning()
-      )[0]
-
-    await tx.insert(chatMessages).values({
-      id: `msg_${crypto.randomUUID()}`,
-      chatSessionId: session.id,
-      authorRole: "customer",
-      authorName: customerName,
-      content: reason,
-      timestamp: now,
-      isPrivateNote: false,
     })
 
     return updated

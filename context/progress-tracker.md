@@ -598,10 +598,9 @@ change.
     non-private CSR send also marks the case replied and stamps
     `contacted_by_csr_name`. `POST .../escalate` — one transaction:
     status/priority/severity bumped, `escalated_at` and
-    `escalation_reason` recorded, a `severity_changes` row written, and
-    the reason inserted into the thread as a customer message so the CSR
-    sees *why* in the conversation, not just a timestamp. Authorship is
-    always resolved server-side, never read from the request body.
+    `escalation_reason` recorded, and a `severity_changes` row written.
+    Authorship is always resolved server-side, never read from the
+    request body.
   - **`lib/mock/case-thread.ts` — the swap point fired.**
     `buildCaseThread()` now merges social-origin `dedupePosts` with the
     case's persisted `realChatMessages` in timestamp order, synthesizing
@@ -632,6 +631,37 @@ change.
     messages route returns 401). **Not verified in-browser** — a
     signed-in click-through of send/note/escalate is still owed, same as
     `07-wire-ui-api`.
+  - **Escalation is an event, not a message (corrected 2026-08-26, on
+    user report).** The first cut copied the customer's escalation reason
+    into `chat_messages` as a customer-authored row so the CSR would see
+    *why* in the thread — but it then rendered as an ordinary reply,
+    indistinguishable from the customer just saying it, with the
+    escalation itself invisible. The user caught this in the console.
+    Now: `escalateServiceRequest()` writes no message,
+    `escalated_at` + `escalation_reason` on the `service_request` row are
+    the single source of truth, `CaseThreadMessage` carries
+    `kind: "message" | "escalation"`, `buildCaseThread()` synthesizes the
+    event at its timestamp (same merge treatment `dedupePosts` gets), and
+    both surfaces render it through one shared
+    `components/shared/escalation-marker.tsx` (centered marker, "Reason:
+    …" beneath) so they can't drift apart on what an escalation looks
+    like — only the title differs ("Escalated by {name}" in the console,
+    "You escalated this ticket" on the customer's own dashboard).
+    `casePreviewText()` labels it rather than quoting it. Customer side:
+    `lib/mock/ticket-thread.ts` (new) is the counterpart to
+    `case-thread.ts` — `buildTicketThread()` merges the ticket's messages
+    with its escalation event in timestamp order, so the marker lands in
+    its real chronological position; `MessageList` takes those entries
+    instead of a bare `ChatMessage[]`. Migration
+    `0004_drop_escalation_chat_messages` (data-only, no schema change)
+    deletes the rows the old behavior wrote, matched on case + author +
+    content + exact escalation timestamp so a genuine message that merely
+    repeats the reason text survives. Applied to `local.db`: one stale row
+    removed, the two real CSR replies on that case untouched. The
+    `ticket-status-panel.tsx` keeps showing the escalation as case status
+    — the panel is the ticket's current state, the thread marker is the
+    event in sequence; the disagreement between the two is what surfaced
+    the bug.
   - **Not done in this unit:** the AI-authored `"agent"` role is defined
     but nothing writes it yet (that's the `lib/agent/` pipeline);
     resolving a case still doesn't persist (`isResolved` remains local

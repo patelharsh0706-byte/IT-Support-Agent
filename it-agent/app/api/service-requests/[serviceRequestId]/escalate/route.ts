@@ -26,11 +26,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "reason is required" }, { status: 400 })
   }
 
-  const serviceRequest = await escalateServiceRequest(
-    serviceRequestId,
-    body.reason.trim(),
-    customer.id,
-    customer.name,
-  )
+  const serviceRequest = await escalateServiceRequest(serviceRequestId, body.reason.trim())
   return NextResponse.json({ serviceRequest })
 }

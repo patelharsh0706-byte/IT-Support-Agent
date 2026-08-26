@@ -47,6 +47,7 @@ export function ConversationPane({ grievanceCase }: ConversationPaneProps) {
       {
         id: message.id,
         caseId: grievanceCase.id,
+        kind: "message",
         author: "csr",
         authorName: message.authorName,
         body: message.content,

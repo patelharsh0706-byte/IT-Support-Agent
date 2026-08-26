@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Button } from "@/components/ui/button"
 import { useServiceRequestActions } from "@/hooks/useServiceRequestActions"
 import { toChatMessage, toTicket } from "@/lib/mock/from-service-request"
+import { buildTicketThread } from "@/lib/mock/ticket-thread"
 import type { ChatMessage, Ticket } from "@/lib/mock/types"
 
 interface CustomerDashboardProps {
@@ -58,12 +59,16 @@ export function CustomerDashboard({
 
   const selectedTicket = tickets.find((t) => t.id === selectedTicketId) ?? null
 
-  const ticketMessages = useMemo(
+  // Messages and the ticket's escalation event, merged in timestamp order.
+  // The escalation is derived from the ticket row, not stored as a message,
+  // so it renders as an event marker instead of an ordinary chat line.
+  const threadEntries = useMemo(
     () =>
-      messages
-        .filter((m) => m.ticketId === selectedTicketId)
-        .sort((a, b) => a.timestamp.localeCompare(b.timestamp) || a.id.localeCompare(b.id)),
-    [messages, selectedTicketId]
+      buildTicketThread(
+        selectedTicket,
+        messages.filter((m) => m.ticketId === selectedTicketId)
+      ),
+    [messages, selectedTicket, selectedTicketId]
   )
 
   /**
@@ -143,13 +148,13 @@ export function CustomerDashboard({
       return
     }
 
-    // The route escalates and writes the reason into the thread in one
-    // transaction, so the ticket is replaced from the returned row and the
-    // thread is re-read rather than guessed at client-side.
+    // Replaced from the row the route returned, not a guessed-at local
+    // edit. The escalation writes no chat message — it's a case event, so
+    // it surfaces in the status panel here and as a marker in the CSR's
+    // thread, never as something the customer "said".
     const { serviceRequest } = await response.json()
     const updated = toTicket(serviceRequest)
     setTickets((prev) => prev.map((ticket) => (ticket.id === ticketId ? updated : ticket)))
-    await loadMessages(ticketId)
     // Keeps the server-rendered ticket list in step with the escalation.
     router.refresh()
 
@@ -186,7 +191,7 @@ export function CustomerDashboard({
               Loading messages…
             </div>
           ) : (
-            <MessageList messages={ticketMessages} />
+            <MessageList entries={threadEntries} />
           )}
           <Composer onSend={handleSend} disabled={!selectedTicketId} />
         </div>

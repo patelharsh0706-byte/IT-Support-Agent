@@ -39,12 +39,50 @@ trail — the AI pipeline (`lib/agent/`, not built) can only ever draft.
   simply not rendering them.
 - `POST /api/service-requests/[id]/escalate` — one transaction: status →
   `escalated`, priority/severity → `high`, `escalated_at` stamped,
-  `escalation_reason` recorded, a `severity_changes` row written, and the
-  reason inserted into the thread as a customer message so the CSR sees
-  *why* in the conversation, not just a timestamp.
+  `escalation_reason` recorded, and a `severity_changes` row written.
 
 Message authorship is always resolved server-side (`requireCsrName()` /
 the resolved customer), never taken from the request body.
+
+## An escalation is an event, not a message
+
+The first cut of the escalate route copied the customer's reason into
+`chat_messages` as a customer-authored row, so the CSR would see *why*
+in the thread. In the console that rendered as an ordinary reply —
+indistinguishable from the customer simply saying "it happened yesterday
+night", with the escalation itself invisible. Corrected:
+
+- `escalateServiceRequest()` writes no chat message. `escalated_at` +
+  `escalation_reason` on the `service_request` row are the single source
+  of truth, so the two can't drift.
+- `CaseThreadMessage` gains `kind: "message" | "escalation"`.
+  `buildCaseThread()` synthesizes the escalation entry at its
+  `escalated_at` position — the same merge treatment `dedupePosts`
+  already gets. A case escalated with no reason (seeded rows, older
+  escalations) still gets the marker; only the reason line is omitted.
+- Both surfaces render the event through one shared
+  `components/shared/escalation-marker.tsx` — a centered marker with
+  "Reason: …" beneath — so the CSR console and the customer dashboard
+  cannot drift apart on what an escalation looks like. Only the title
+  differs: the console names the customer ("Escalated by {name}"), the
+  customer's own dashboard says "You escalated this ticket".
+- `casePreviewText()` labels it (`Escalated — {reason}`) so the
+  conversation list never quotes the reason as if it were just said.
+- Customer side: `lib/mock/ticket-thread.ts` (new) is the counterpart to
+  `case-thread.ts` — `buildTicketThread(ticket, messages)` merges the
+  ticket's chat messages with its escalation event in timestamp order, so
+  the event lands in its real chronological position rather than being
+  pinned to the end. `MessageList` now takes those entries instead of a
+  bare `ChatMessage[]`.
+- Migration `0004_drop_escalation_chat_messages` deletes rows the old
+  behavior already wrote, matched on case + author + content + exact
+  escalation timestamp so a genuine message that merely repeats the
+  reason text survives.
+
+`ticket-status-panel.tsx` already presented the escalation with its
+reason as case status, and that disagreement between panel and thread is
+what surfaced the bug. It stays as-is: the panel is the ticket's current
+state, the thread marker is the event in sequence.
 
 ## UI
 
@@ -68,9 +106,10 @@ the resolved customer), never taken from the request body.
   write, so a failed send never loses text. Both show an inline error and
   disable while in flight.
 - **`components/customer/customer-dashboard.tsx`** — the composer POSTs;
-  escalation POSTs, replaces the ticket from the returned row, re-reads
-  the thread (the escalation wrote into it), and refreshes. Threads load
-  per ticket on selection rather than in an effect — no cascading render,
+  escalation POSTs, replaces the ticket from the row the route returned,
+  and refreshes. It writes no message: the escalation reaches the thread
+  through `buildTicketThread()`, derived from the updated ticket row.
+  Threads load per ticket on selection rather than in an effect — no cascading render,
   and no fetch for a thread never opened. The first ticket's thread is
   server-rendered in `app/customer/dashboard/page.tsx` (private notes
   filtered there too), so the initial view needs no fetch.
@@ -79,7 +118,8 @@ the resolved customer), never taken from the request body.
 
 - a CSR reply and a private note both survive a hard refresh
 - a private note never appears in a customer's `GET /messages` response
-- a customer escalation persists status/severity/reason and lands the
-  reason in the shared thread
+- a customer escalation persists status/severity/reason and shows as an
+  escalation marker — never as a chat message — in *both* the CSR thread
+  and the customer's own thread, in its real chronological position
 - a failed send keeps the drafted text
 - `npx tsc --noEmit`, `npm run lint`, `npm run build` all pass
