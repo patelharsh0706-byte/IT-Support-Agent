@@ -671,6 +671,29 @@ change.
     — the panel is the ticket's current state, the thread marker is the
     event in sequence; the disagreement between the two is what surfaced
     the bug.
+  - **Stale Drizzle instance hid new columns from `db.query.*` (fixed
+    2026-08-27, on user report).** The customer dashboard showed neither
+    the escalation marker nor the status panel's reason box while the CSR
+    console showed the reason fine — same row, same request. Cause:
+    `lib/sqlite/client.ts` cached the *Drizzle instance* on
+    `global._dbClient` for dev hot reloads, and `drizzle()` snapshots
+    `schema` at construction. The dev server booted before
+    `escalation_reason` existed, so for the rest of that session the
+    relational query API (`db.query.*`, used by
+    `listServiceRequestsForCustomer`) generated SELECTs without the new
+    column and returned `undefined` for it, while `db.select()` (used by
+    `listGrievanceCases`) and every write kept working because they take
+    the imported table object, which HMR does refresh. That split is
+    exactly why the value reached the database and the CSR console but
+    never the customer. Fix: cache the libSQL *connection* instead — the
+    part actually worth reusing — and rebuild the Drizzle instance on
+    every module evaluation so its schema can never lag a migration.
+    Proven with a probe running all three paths against the same row:
+    fresh `db.query.*` returns the reason, a stale-schema `db.query.*`
+    returns `undefined`, and `db.select()` on that same stale instance
+    returns the reason. Any schema change made mid-session was silently
+    exposed to this before; nothing else in the codebase reads through
+    `db.query.*` with a column added after boot, but the trap is gone now.
   - **Not done in this unit:** the AI-authored `"agent"` role is defined
     but nothing writes it yet (that's the `lib/agent/` pipeline);
     resolving a case still doesn't persist (`isResolved` remains local
