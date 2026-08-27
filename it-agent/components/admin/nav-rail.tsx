@@ -1,7 +1,7 @@
 "use client"
 
 import { UserButton, useUser } from "@clerk/nextjs"
-import { BarChart3, LayoutList, MessagesSquare, Search } from "lucide-react"
+import { BarChart3, Bot, LayoutList, MessagesSquare, Search } from "lucide-react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
 import { AdminNavGroup } from "@/components/admin/nav-group"
@@ -128,6 +128,15 @@ export function AdminNavRail({ cases }: AdminNavRailProps) {
               label="Grievance Queue"
               isActive={pathname === "/admin/reports/grievances"}
             />
+
+            <AdminNavGroup label="Agent" icon={Bot} level={1} defaultOpen={false}>
+              <AdminNavLink
+                href="/admin/reports/agent/twitter"
+                label="Twitter Agents"
+                isActive={pathname === "/admin/reports/agent/twitter"}
+                level={2}
+              />
+            </AdminNavGroup>
           </AdminNavGroup>
         </nav>
       </ScrollArea>

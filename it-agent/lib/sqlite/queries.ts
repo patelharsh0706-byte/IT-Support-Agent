@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, isNull } from "drizzle-orm"
 import { currentUser } from "@clerk/nextjs/server"
 import { cache } from "react"
 import { db } from "./client"
@@ -10,6 +10,8 @@ import {
   serviceRequests,
   severityChanges,
   socialPosts,
+  tweetMentions,
+  tweetReplies,
 } from "./schema"
 import type { DashboardMetrics, GrievanceCase, Intent, MessageAuthorRole } from "@/lib/mock/types"
 
@@ -206,7 +208,7 @@ export async function escalateServiceRequest(serviceRequestId: string, reason: s
         status: "escalated",
         priority: "high",
         currentSeverity: "high",
-        escalatedAt: now,
+        
         escalationReason: reason,
         updatedAt: now,
       })
@@ -418,4 +420,221 @@ export async function computeDashboardMetrics(): Promise<DashboardMetrics> {
     escalationsPastThreshold,
     closedAccountOpenGrievanceCount: null,
   }
+}
+
+// --- Tweet fetch agent (09-tweet-fetch-agent) ---
+//
+// Every read below uses `db.select()` rather than the relational query API.
+// `db.query.*` builds its column list from the schema snapshot taken when
+// `drizzle()` was constructed, so a column added mid-session silently comes
+// back `undefined` — the bug fixed in commit 2752f28. These tables are new,
+// which is exactly when that bites.
+
+/**
+ * Inserts only mentions we have not seen, keyed on the platform's own id.
+ * Returns what happened so the fetch route can report "12 fetched, 3 new" —
+ * pressing Fetch twice must insert nothing the second time.
+ */
+export async function upsertTweetMentions(
+  rows: (typeof tweetMentions.$inferInsert)[],
+): Promise<{ inserted: number; skipped: number }> {
+  if (rows.length === 0) return { inserted: 0, skipped: 0 }
+
+  const inserted = await db
+    .insert(tweetMentions)
+    .values(rows)
+    // `tweet_id` is unique; a repeat fetch is a no-op rather than an error.
+    .onConflictDoNothing({ target: tweetMentions.tweetId })
+    .returning({ id: tweetMentions.id })
+
+  return { inserted: inserted.length, skipped: rows.length - inserted.length }
+}
+
+/** Handles already stored, for the urgency rules' repeat-post signal. */
+export async function listKnownTweetHandles(): Promise<Set<string>> {
+  const rows = await db
+    .select({ authorHandle: tweetMentions.authorHandle })
+    .from(tweetMentions)
+  return new Set(rows.map((r) => r.authorHandle))
+}
+
+export interface TweetFeedQuery {
+  /** Hours back from now; undefined means no time bound. */
+  windowHours?: number
+  urgency?: "critical" | "high" | "normal"
+  grievanceOnly?: boolean
+  includeDismissed?: boolean
+  unrepliedOnly?: boolean
+}
+
+const URGENCY_RANK: Record<string, number> = { critical: 0, high: 1, normal: 2 }
+
+/**
+ * The feed: mentions with their outbound attempts, urgency-first then newest.
+ * Ordering is applied in JS because it is a rank over an enum, not a column
+ * order — at this data volume that is cheaper than a CASE expression and far
+ * easier to read.
+ */
+export async function listTweetMentions(query: TweetFeedQuery = {}) {
+  const filters = []
+
+  if (query.windowHours !== undefined) {
+    const since = new Date(Date.now() - query.windowHours * 3_600_000).toISOString()
+    filters.push(gte(tweetMentions.postedAt, since))
+  }
+  if (query.urgency) filters.push(eq(tweetMentions.urgency, query.urgency))
+  if (query.grievanceOnly) filters.push(eq(tweetMentions.isGrievance, true))
+  if (!query.includeDismissed) filters.push(isNull(tweetMentions.dismissedAt))
+
+  const mentions = await db
+    .select()
+    .from(tweetMentions)
+    .where(filters.length > 0 ? and(...filters) : undefined)
+
+  const mentionIds = mentions.map((m) => m.id)
+  const replies =
+    mentionIds.length > 0
+      ? await db
+          .select()
+          .from(tweetReplies)
+          .where(inArray(tweetReplies.tweetMentionId, mentionIds))
+      : []
+
+  const repliesByMention = new Map<string, typeof replies>()
+  for (const reply of replies) {
+    const list = repliesByMention.get(reply.tweetMentionId) ?? []
+    list.push(reply)
+    repliesByMention.set(reply.tweetMentionId, list)
+  }
+
+  const assembled = mentions.map((mention) => ({
+    ...mention,
+    urgencyReasons: parseReasons(mention.urgencyReasons),
+    replies: (repliesByMention.get(mention.id) ?? []).sort((a, b) =>
+      a.createdAt.localeCompare(b.createdAt),
+    ),
+  }))
+
+  const filtered = query.unrepliedOnly
+    ? assembled.filter((m) => !m.replies.some((r) => r.status === "sent"))
+    : assembled
+
+  return filtered.sort(
+    (a, b) =>
+      URGENCY_RANK[a.urgency] - URGENCY_RANK[b.urgency] ||
+      b.postedAt.localeCompare(a.postedAt) ||
+      a.tweetId.localeCompare(b.tweetId),
+  )
+}
+
+/** Stored as a JSON string; a malformed value degrades to no reasons rather than throwing. */
+function parseReasons(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.filter((r): r is string => typeof r === "string") : []
+  } catch {
+    return []
+  }
+}
+
+export async function getTweetMentionByTweetId(tweetId: string) {
+  const [row] = await db
+    .select()
+    .from(tweetMentions)
+    .where(eq(tweetMentions.tweetId, tweetId))
+    .limit(1)
+  return row ?? null
+}
+
+export async function setTweetMentionDismissed(tweetId: string, dismissed: boolean) {
+  const [row] = await db
+    .update(tweetMentions)
+    .set({ dismissedAt: dismissed ? new Date().toISOString() : null })
+    .where(eq(tweetMentions.tweetId, tweetId))
+    .returning()
+  return row ?? null
+}
+
+export async function listRepliesForMention(tweetMentionId: string) {
+  return db
+    .select()
+    .from(tweetReplies)
+    .where(eq(tweetReplies.tweetMentionId, tweetMentionId))
+    .orderBy(asc(tweetReplies.createdAt))
+}
+
+/**
+ * Written *before* the publish call, so a crash mid-send leaves evidence
+ * rather than a gap.
+ */
+export async function createPendingReply(params: {
+  tweetMentionId: string
+  text: string
+  sentByCsrName: string
+  isDryRun: boolean
+}) {
+  const [row] = await db
+    .insert(tweetReplies)
+    .values({
+      id: `trep_${crypto.randomUUID()}`,
+      tweetMentionId: params.tweetMentionId,
+      text: params.text,
+      sentByCsrName: params.sentByCsrName,
+      status: "pending",
+      isDryRun: params.isDryRun,
+      createdAt: new Date().toISOString(),
+    })
+    .returning()
+  return row
+}
+
+export async function markReplySent(
+  id: string,
+  result: { platformReplyId: string; platformPermalink: string; sentAt: string },
+) {
+  const [row] = await db
+    .update(tweetReplies)
+    .set({ status: "sent", ...result })
+    .where(eq(tweetReplies.id, id))
+    .returning()
+  return row
+}
+
+/** The row stays. An admin must be able to see that a send did not land. */
+export async function markReplyFailed(id: string, error: string) {
+  const [row] = await db
+    .update(tweetReplies)
+    .set({ status: "failed", error })
+    .where(eq(tweetReplies.id, id))
+    .returning()
+  return row
+}
+
+/** True when an attempt is already in flight — a double-click must not double-post. */
+export async function hasPendingReply(tweetMentionId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: tweetReplies.id })
+    .from(tweetReplies)
+    .where(
+      and(eq(tweetReplies.tweetMentionId, tweetMentionId), eq(tweetReplies.status, "pending")),
+    )
+    .limit(1)
+  return rows.length > 0
+}
+
+/** R17: every fetch and every send is auditable. */
+export async function recordAgentAction(params: {
+  stage: string
+  status: "running" | "ok" | "failed" | "denied"
+  detail?: string
+  tweetMentionId?: string
+}) {
+  await db.insert(agentActions).values({
+    id: `act_${crypto.randomUUID()}`,
+    stage: params.stage,
+    status: params.status,
+    detail: params.detail ?? null,
+    tweetMentionId: params.tweetMentionId ?? null,
+    timestamp: new Date().toISOString(),
+  })
 }

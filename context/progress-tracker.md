@@ -699,6 +699,85 @@ change.
     resolving a case still doesn't persist (`isResolved` remains local
     state in `conversation-pane.tsx`).
 
+- **09-tweet-fetch-agent — brand mentions from X into the CSR console**
+  - First unit specified *before* the code
+    (`feature-specs/09-tweet-fetch-agent.md`). Nothing ingested anything
+    before this: `lib/social/` did not exist and every social case on the
+    board was seed data.
+  - **Schema (migration `0005_curious_mantis`)** — `tweet_mentions` (raw
+    mentions; `tweet_id` UNIQUE is the whole dedupe story for this unit)
+    and `tweet_replies` (one row per outbound attempt, never overwritten,
+    `failed` rows kept). A raw mention deliberately does not live in
+    `social_posts`, whose `service_request_id` is `notNull` by design.
+    Also adds `agent_actions.tweet_mention_id` — a gap in the spec: the
+    audit table had nullable FKs to `service_request` and `chat_messages`
+    only, so a tweet reply's audit row would have been orphaned.
+  - **Source is an interface with two implementations.**
+    `FixtureTweetSource` (default) reads a committed 8-post corpus with
+    anonymised handles and relative timestamps, so it never ages out of
+    the 6/12/24h windows. `LiveTweetSource` is opt-in via
+    `TWEET_SOURCE=live` and **fails loudly** without credentials — it
+    never falls back to fixtures, because a demo quietly showing canned
+    tweets while claiming to be live is worse than one that errors.
+  - **XActions ported, not installed.** `xactions@3.5.0` declares 35
+    direct dependencies including Prisma, Express, Puppeteer, `node-cron`,
+    `bull`, `redis` and Stripe — a second ORM, a second HTTP server and a
+    scheduler, which invariants 6 and 7 forbid. Two functions
+    (`searchTweets`, `replyToTweet`) are ported to TypeScript under
+    `lib/social/vendor/xactions/` with the Apache-2.0 licence text and a
+    provenance README naming upstream version, commit and every change.
+    Upstream's `replyToTweet` wraps `postTweet`, so the CreateTweet
+    mutation is necessarily present — but the module exports exactly one
+    write function and it always sets `in_reply_to_tweet_id`. No exported
+    path posts a standalone tweet, quotes, deletes or schedules one, which
+    is what invariant 5 needs: absence of the capability, not a promise
+    not to call it.
+  - **Publishing is a separate switch from reading.** `TWEET_PUBLISH=live`
+    is independent of `TWEET_SOURCE=live`; dry run is the default, and a
+    persistent badge says which mode is active wherever the composer is.
+    The reply route writes its `pending` row *before* the publish call so
+    a crash leaves evidence, rejects a second POST while one is pending,
+    and keeps `failed` rows with their error and text.
+  - **`lib/social/urgency.ts` is deterministic — no model call.** Gate plus
+    `critical`/`high`/`normal`, every firing rule contributing a
+    human-readable reason rendered on the row. Rules only ever raise a
+    level, mirroring R4. `scoreTweet()` is the documented swap point for a
+    future classifier, the role `buildCaseThread()` played in unit 08.
+  - **`lib/social/reply-guard.ts` blocks, not warns** — card-like digit
+    runs, last-four, security codes, amounts, balances and transaction
+    ids, each naming the matched rule so a rejection is fixable.
+  - **Nav:** `Reports → Agent → Twitter Agents`, reusing the
+    `AdminNavGroup level={1}` / `AdminNavLink level={2}` nesting
+    Conversations → Channels already uses. Route is
+    `reports/agent/twitter`, not the spec's original `reports/mentions`;
+    the spec has been updated rather than left to drift.
+  - **Two real defects the fixture corpus caught that the unit tests did
+    not.** (a) Closure markers only matched "closed *my* card", so a
+    churned customer saying "closed *the* card and moved everything to
+    another issuer" scored `high` instead of `critical` — the single most
+    expensive miss this product can make. (b) `knownHandles` was read
+    before the insert, so two posts by one author *in the same batch*
+    never saw each other; scoring is now chronological with the set
+    growing as it goes. Both have regression tests.
+  - **Test harness added** (`vitest`, `npm test`) — the repo had none.
+    29 tests over the two pure decision functions; everything else is
+    verified by behaviour.
+  - Verified: `npm test`, `npx tsc --noEmit`, `npm run lint`,
+    `npm run build` all clean; the build's route table shows all five new
+    routes as `ƒ` Dynamic. Fetch → score → store → feed and the full reply
+    path were exercised against a throwaway copy of `local.db`: a second
+    fetch inserts zero, both non-grievances carry no badge, the
+    account-closure and regulator posts are `critical` with their reasons,
+    the repeat post is `high`, the guard blocks all three account-specific
+    replies before any publish call, a double-send is rejected, a failed
+    row keeps its error and text, and dismiss is reversible.
+  - **Not verified in-browser** — a signed-in click-through of fetch,
+    reply and dismiss is still owed, as is any live-network run.
+  - **Not done in this unit:** promoting a mention into a `service_request`
+    (the column exists, the route does not), author-plus-issue dedupe
+    (S3), the customer soft-link and case bridge (S4), AI-drafted replies,
+    a scheduler (S7), and DMs/threads/quote-tweets.
+
 ## In Progress
 
 - None.

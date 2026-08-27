@@ -1,0 +1,89 @@
+{
+  "_comment": [
+    "Fixture corpus for FixtureTweetSource. Handles are invented — no real",
+    "individual's grievance ships in this repo, per feature-specs/09 and the",
+    "social intake plan's S1 risk note.",
+    "",
+    "Times are relative (`minutesAgo`) rather than absolute so the corpus never",
+    "ages out of the 6/12/24h windows. Ordering stays deterministic across runs;",
+    "only the wall-clock stamps move.",
+    "",
+    "Required coverage: a plain grievance, a repeat post from one author, an aged",
+    "grievance, an account-closure threat, a regulator threat, and TWO",
+    "non-grievances — the negative cases the urgency rules can get wrong."
+  ],
+  "mentions": [
+    {
+      "tweetId": "fixture_1001",
+      "authorHandle": "r_menon_sg",
+      "authorName": "Rohit Menon",
+      "text": "@AmexHelp my card has been blocked since Tuesday and no one can tell me why. Third call this week, still nothing. This is my only card here.",
+      "minutesAgo": 130,
+      "replyCount": 2,
+      "likeCount": 4
+    },
+    {
+      "tweetId": "fixture_1002",
+      "authorHandle": "r_menon_sg",
+      "authorName": "Rohit Menon",
+      "text": "@AmexHelp still blocked. 4 days now. Anyone home?",
+      "minutesAgo": 45,
+      "replyCount": 0,
+      "likeCount": 1
+    },
+    {
+      "tweetId": "fixture_1003",
+      "authorHandle": "priya_tan",
+      "authorName": "Priya Tan",
+      "text": "@AmexHelp I have been chasing a dispute since May. Nine months. I have closed the card and moved everything to another issuer. Do not recommend.",
+      "minutesAgo": 305,
+      "replyCount": 18,
+      "likeCount": 96
+    },
+    {
+      "tweetId": "fixture_1004",
+      "authorHandle": "danielortega",
+      "authorName": "Daniel Ortega",
+      "text": "@AmexHelp there are two charges on my statement I did not make. $840 total. Nobody has called me back. If I do not hear today I am filing with the regulator.",
+      "minutesAgo": 545,
+      "replyCount": 6,
+      "likeCount": 31
+    },
+    {
+      "tweetId": "fixture_1005",
+      "authorHandle": "meera_iyer",
+      "authorName": "Meera Iyer",
+      "text": "@AmexHelp a charge of $214.50 posted twice at the same merchant and the money is still missing from my account a week later.",
+      "minutesAgo": 690,
+      "replyCount": 3,
+      "likeCount": 12
+    },
+    {
+      "tweetId": "fixture_1006",
+      "authorHandle": "jonas_w",
+      "authorName": "Jonas Weber",
+      "text": "@AmexHelp raised a query about my activation fee back in March and it is still open. Nobody has ever followed up.",
+      "minutesAgo": 2410,
+      "replyCount": 1,
+      "likeCount": 7
+    },
+    {
+      "tweetId": "fixture_1007",
+      "authorHandle": "sofia_lim",
+      "authorName": "Sofia Lim",
+      "text": "Genuinely impressed — @AmexHelp replaced my card and had it couriered same day. Best service I have had from any bank.",
+      "minutesAgo": 190,
+      "replyCount": 0,
+      "likeCount": 22
+    },
+    {
+      "tweetId": "fixture_1008",
+      "authorHandle": "tech_ledger",
+      "authorName": "The Tech Ledger",
+      "text": "Payments roundup: @AmexHelp and two other issuers are expanding contactless limits across the region this quarter.",
+      "minutesAgo": 430,
+      "replyCount": 4,
+      "likeCount": 58
+    }
+  ]
+}
