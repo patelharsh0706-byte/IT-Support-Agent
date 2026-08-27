@@ -30,15 +30,21 @@ export type TicketStatus = "open" | "in_progress" | "resolved" | "escalated"
 
 export interface Ticket {
   id: string
-  intent: Intent
+  /** Null until `lib/agent/classify.ts` (not built yet) classifies it. */
+  intent: Intent | null
   title: string
   priority: Priority
   status: TicketStatus
   createdAt: string
   updatedAt: string
+  /** Mirrors `service_request.escalated_at`. Null until escalated. */
+  escalatedAt?: string | null
+  /** Customer's stated reason, captured when they escalate to an admin. Mirrors `service_request.escalation_reason`. */
+  escalationReason?: string | null
 }
 
-export type MessageAuthorRole = "customer" | "agent"
+/** "csr" is a human reply; "agent" is reserved for the future AI pipeline (`lib/agent/`, not built yet). */
+export type MessageAuthorRole = "customer" | "agent" | "csr"
 
 export interface ChatMessage {
   id: string
@@ -70,6 +76,16 @@ export interface DedupePost {
   postedAt: string
 }
 
+/** A real, persisted `chat_messages` row — see `lib/mock/case-thread.ts`'s `buildCaseThread()`. */
+export interface RealChatMessage {
+  id: string
+  authorRole: MessageAuthorRole
+  authorName: string
+  content: string
+  timestamp: string
+  isPrivateNote: boolean
+}
+
 export type ReplyState = "needs_reply" | "draft_ready" | "replied" | "escalated"
 
 export interface GrievanceCase {
@@ -87,6 +103,8 @@ export interface GrievanceCase {
   createdAt: string
   /** Time-in-escalation clock basis: null until escalated, then never reset. */
   escalatedAt: string | null
+  /** Customer's stated reason, captured when they escalate. Mirrors `service_request.escalation_reason`. */
+  escalationReason: string | null
   customerStatus: CustomerStatus
   /** Social/chat identity is a hint, never authentication — soft link only. */
   customerVerified: boolean
@@ -98,6 +116,8 @@ export interface GrievanceCase {
   severityHistory: SeverityChange[]
   toolCallLog: ActivityEvent[]
   aiDraftReply?: string
+  /** Real per-case thread, when a chat session exists. Empty until a first message. */
+  realChatMessages: RealChatMessage[]
 }
 
 export interface DashboardMetrics {
@@ -105,6 +125,12 @@ export interface DashboardMetrics {
   oldestUnansweredCaseId: string | null
   oldestUnansweredAgeHours: number | null
   escalationsPastThreshold: number
-  /** Headline metric: customers who closed their account while a grievance sat open. */
-  closedAccountOpenGrievanceCount: number
+  /**
+   * Headline metric: customers who closed their account while a grievance
+   * sat open. `null` when not computable — the schema has no closure
+   * timestamp/status history to derive this from yet (see
+   * `context/progress-tracker.md`, Open Questions). Render as an explicit
+   * "not yet available" state, never as `0`.
+   */
+  closedAccountOpenGrievanceCount: number | null
 }

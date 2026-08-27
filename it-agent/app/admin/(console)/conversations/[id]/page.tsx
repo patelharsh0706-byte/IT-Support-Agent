@@ -1,17 +1,25 @@
 import { notFound } from "next/navigation"
 
 import { ConversationPane } from "@/components/admin/conversation-pane"
-import { grievanceCases } from "@/lib/mock/fixtures"
+import { getGrievanceCaseDetail } from "@/lib/sqlite/queries"
 
 export default async function ConversationPage({
   params,
 }: PageProps<"/admin/conversations/[id]">) {
   const { id } = await params
-  const grievanceCase = grievanceCases.find((c) => c.id === id)
+  // The CSR's own name is no longer needed here: a sent message is stamped
+  // server-side by `requireCsrName()` inside the messages route, and the
+  // pane renders the name that came back from the write.
+  const grievanceCase = await getGrievanceCaseDetail(id)
 
   if (!grievanceCase) {
     notFound()
   }
 
-  return <ConversationPane key={grievanceCase.id} grievanceCase={grievanceCase} />
+  return (
+    <ConversationPane
+      key={grievanceCase.id}
+      grievanceCase={grievanceCase}
+    />
+  )
 }

@@ -29,9 +29,10 @@ import type { GrievanceCase } from "@/lib/mock/types"
 
 interface ConversationListPaneProps {
   cases: GrievanceCase[]
+  currentCsrName: string
 }
 
-export function ConversationListPane({ cases }: ConversationListPaneProps) {
+export function ConversationListPane({ cases, currentCsrName }: ConversationListPaneProps) {
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const router = useRouter()
@@ -42,8 +43,8 @@ export function ConversationListPane({ cases }: ConversationListPaneProps) {
     ? pathname.slice("/admin/conversations/".length)
     : null
 
-  const visible = sortCases(filterCases(cases, filters), sort)
-  const assignmentCounts = countByAssignment(cases, filters)
+  const visible = sortCases(filterCases(cases, filters, currentCsrName), sort)
+  const assignmentCounts = countByAssignment(cases, filters, currentCsrName)
   const title = filters.channel ? channelMeta[filters.channel].label : viewLabel[filters.view]
 
   // Only used for channel/assignment changes — the open conversation may not

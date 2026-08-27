@@ -5,6 +5,7 @@ import { Plus, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { PriorityBadge } from "@/components/shared/priority-badge"
+import { TicketStatusBadge } from "@/components/shared/ticket-status-badge"
 import type { Ticket } from "@/lib/mock/types"
 import { cn } from "@/lib/utils"
 
@@ -91,9 +92,7 @@ export function TicketSidebar({
                   </span>
                   <span className="flex items-center gap-2">
                     <PriorityBadge priority={ticket.priority} />
-                    <span className="text-[13px] capitalize text-muted-foreground">
-                      {ticket.status.replace("_", " ")}
-                    </span>
+                    <TicketStatusBadge status={ticket.status} />
                   </span>
                 </button>
               </li>

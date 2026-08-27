@@ -108,7 +108,7 @@ The application is a three-column dashboard on a single full-viewport surface.
 - **Shell:** fixed left sidebar, flexible centre column, fixed right panel. Columns are separated by `--border-default` hairlines, not gaps.
 - **Left sidebar:** fixed width (~280px). Brand at top, primary nav below it, signed-in customer pinned to the bottom with a sign-out control. The active nav item takes a `--bg-subtle` fill.
 - **Centre column:** pinned header (conversation title plus a context subtitle), scrollable message list, pinned composer at the bottom. A one-line disclaimer sits under the composer.
-- **Right panel:** fixed width (~480px). Pinned header with title, status caption, and a close control; scrollable body; actions pinned to a bottom bar when the panel is actionable. This panel holds the Agent Activity stream.
+- **Right panel:** fixed width (~480px). Pinned header with title, status caption, and a close control; scrollable body; actions pinned to a bottom bar when the panel is actionable. On the customer dashboard this panel holds the Ticket Status timeline; on the CSR console it holds the case-detail tool-call log.
 - **Sign-in / sign-up (Clerk):** two-panel on large screens — left panel (`--bg-chrome`) carries a compact logo, tagline, and a short text-only feature list, no cards; right panel is a centred Clerk form on `--bg-base`. Small screens drop the left panel entirely: form only, no gradients, no hero imagery, no scroll-heavy content. **Revised 2026-08-22** — supersedes the earlier single-column centred-card login pattern now that auth is Clerk-hosted, not a custom form.
 
 ### Message list

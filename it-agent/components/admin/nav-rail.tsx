@@ -10,14 +10,18 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { buildConversationsHref, countByChannel, countByView } from "@/lib/admin/conversation-views"
 import { channelMeta, channelOrder } from "@/lib/mock/channels"
-import { grievanceCases } from "@/lib/mock/fixtures"
+import type { GrievanceCase } from "@/lib/mock/types"
+
+interface AdminNavRailProps {
+  cases: GrievanceCase[]
+}
 
 /**
  * Left nav rail for the CSR console. `?q=` search writes back via
  * `router.replace` on every keystroke — free at this data volume, but not a
  * pattern to copy into a real search backend without debouncing.
  */
-export function AdminNavRail() {
+export function AdminNavRail({ cases }: AdminNavRailProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -28,8 +32,8 @@ export function AdminNavRail() {
   const query = searchParams.get("q") ?? ""
 
   const onConversations = pathname.startsWith("/admin/conversations")
-  const viewCounts = countByView(grievanceCases)
-  const channelCounts = countByChannel(grievanceCases)
+  const viewCounts = countByView(cases)
+  const channelCounts = countByChannel(cases)
 
   function isViewActive(target: string | null) {
     return onConversations && (view ?? "all") === (target ?? "all") && !channel

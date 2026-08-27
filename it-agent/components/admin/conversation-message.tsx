@@ -1,5 +1,6 @@
 import { Lock } from "lucide-react"
 
+import { EscalationMarker } from "@/components/shared/escalation-marker"
 import type { CaseThreadMessage } from "@/lib/mock/case-thread"
 import { cn } from "@/lib/utils"
 
@@ -13,6 +14,18 @@ interface ConversationMessageProps {
 }
 
 export function ConversationMessage({ message }: ConversationMessageProps) {
+  // A case event, not something the customer said — rendered as a centered
+  // marker so it never reads as an ordinary reply in the thread.
+  if (message.kind === "escalation") {
+    return (
+      <EscalationMarker
+        title={`Escalated by ${message.authorName}`}
+        reason={message.body}
+        timestamp={message.timestamp}
+      />
+    )
+  }
+
   if (message.isPrivateNote) {
     return (
       <div className="flex justify-center py-1.5">

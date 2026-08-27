@@ -28,9 +28,10 @@ interface ActivityPanelProps {
 }
 
 /**
- * Scrollable activity stream shared by the customer-facing agent-activity
- * panel and the admin case-detail tool-call log. Renders one row per event,
- * plus a distinct closing row for the terminal state when present.
+ * Scrollable activity stream backing the admin case-detail tool-call log.
+ * Renders one row per event, plus a distinct closing row for the terminal
+ * state when present. CSR-facing only — the customer dashboard shows plain
+ * ticket status instead (`components/editor/ticket-status-panel.tsx`).
  */
 export function ActivityPanel({
   events,

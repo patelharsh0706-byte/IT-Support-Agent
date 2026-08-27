@@ -1,5 +1,4 @@
 import type { CaseChannel, GrievanceCase, Severity } from "@/lib/mock/types"
-import { currentCsrName } from "@/lib/mock/current-csr"
 
 export type ConversationView = "all" | "mentions" | "participating" | "unattended"
 export type AssignmentTab = "mine" | "unassigned" | "all"
@@ -68,7 +67,11 @@ function matchesView(grievanceCase: GrievanceCase, view: ConversationView): bool
   }
 }
 
-function matchesAssignment(grievanceCase: GrievanceCase, assignment: AssignmentTab): boolean {
+function matchesAssignment(
+  grievanceCase: GrievanceCase,
+  assignment: AssignmentTab,
+  currentCsrName: string
+): boolean {
   switch (assignment) {
     case "all":
       return true
@@ -88,12 +91,16 @@ function matchesQuery(grievanceCase: GrievanceCase, query: string): boolean {
   )
 }
 
-export function filterCases(cases: GrievanceCase[], filters: ConversationFilters): GrievanceCase[] {
+export function filterCases(
+  cases: GrievanceCase[],
+  filters: ConversationFilters,
+  currentCsrName: string
+): GrievanceCase[] {
   return cases.filter(
     (c) =>
       matchesView(c, filters.view) &&
       (filters.channel === null || c.channel === filters.channel) &&
-      matchesAssignment(c, filters.assignment) &&
+      matchesAssignment(c, filters.assignment, currentCsrName) &&
       matchesQuery(c, filters.query)
   )
 }
@@ -133,7 +140,8 @@ export function countByChannel(cases: GrievanceCase[]): Record<CaseChannel, numb
 /** Counts reflect the view/channel/query filters but not the assignment filter itself, so switching tabs doesn't move the other tabs' counts. */
 export function countByAssignment(
   cases: GrievanceCase[],
-  filters: ConversationFilters
+  filters: ConversationFilters,
+  currentCsrName: string
 ): Record<AssignmentTab, number> {
   const base = cases.filter(
     (c) =>
@@ -142,8 +150,8 @@ export function countByAssignment(
       matchesQuery(c, filters.query)
   )
   return {
-    mine: base.filter((c) => matchesAssignment(c, "mine")).length,
-    unassigned: base.filter((c) => matchesAssignment(c, "unassigned")).length,
+    mine: base.filter((c) => matchesAssignment(c, "mine", currentCsrName)).length,
+    unassigned: base.filter((c) => matchesAssignment(c, "unassigned", currentCsrName)).length,
     all: base.length,
   }
 }
