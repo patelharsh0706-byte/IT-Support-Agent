@@ -22,7 +22,7 @@ If a future unit needs a genuinely different shape — parallel sub-agent fan-ou
 | Framework         | Next.js (App Router) + TypeScript            | Frontend UI + API routes (single deployable app)                     |
 | UI                | Tailwind CSS + shadcn/ui                     | Chat interface, live Agent Activity panel, CSR console + dashboard   |
 | Agent / LLM       | Vercel AI SDK                                | Tool-calling agent loop (classify, confirm), streaming to the UI — no separate orchestration layer |
-| LLM Provider      | Amazon Bedrock (Claude), swappable via the AI SDK's provider interface | Provider swap is a one-line change; Bedrock is the AWS-sponsorship integration point |
+| LLM Provider      | **OpenAI in use** (`@ai-sdk/openai`); Amazon Bedrock (Claude) remains the intended target | Provider swap is a one-line change, confined to `lib/agent/provider.ts`. OpenAI was chosen in `10-llm-integration` because that is where working credentials are; Bedrock is still the AWS-sponsorship integration point and the swap back is one file |
 | Database          | SQLite via Turso (libSQL) + Drizzle ORM      | Persists customers, cards, transactions, service requests, and all servicing/audit data — see Storage Model |
 | Auth              | Clerk                                        | Two Clerk-hosted sign-in doors (`/sign-in` customer, `/admin/sign-in` CSR, invite-only), same instance and session shape; `customer`/`csr` carried as a `publicMetadata.role` session claim |
 | Social intake     | Channel adapter interface (`lib/channels/`)  | Normalizes posts from external channels into the same pipeline; fixture-backed for the demo, live-client stub for later — see `docs/plans/2026-08-22-001-feat-social-grievance-intake-plan.md` |

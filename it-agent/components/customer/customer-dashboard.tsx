@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { useServiceRequestActions } from "@/hooks/useServiceRequestActions"
 import { toChatMessage, toTicket } from "@/lib/mock/from-service-request"
 import { buildTicketThread } from "@/lib/mock/ticket-thread"
+import { readChatStream } from "@/lib/agent/stream-client"
 import type { ChatMessage, Ticket } from "@/lib/mock/types"
 
 interface CustomerDashboardProps {
@@ -42,6 +43,10 @@ export function CustomerDashboard({
     initialTickets[0] ? [initialTickets[0].id] : []
   )
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+  // True while a servicing turn is in flight. The customer sees plain language,
+  // never stage detail — agent telemetry is CSR-facing only
+  // (`context/project-overview.md`, Chat & Agent Activity).
+  const [isAgentWorking, setIsAgentWorking] = useState(false)
   const [isEscalateOpen, setIsEscalateOpen] = useState(false)
   const [escalationReason, setEscalationReason] = useState("")
   const [escalateError, setEscalateError] = useState<string | null>(null)
@@ -113,20 +118,45 @@ export function CustomerDashboard({
     setLoadedTicketIds((prev) => (prev.includes(ticketId) ? prev : [...prev, ticketId]))
   }
 
+  /**
+   * Runs one servicing turn. The agent classifies, acts, verifies and replies;
+   * this reads the NDJSON stream and appends each persisted row as it arrives.
+   *
+   * Activity events are consumed but deliberately not rendered here — the
+   * customer gets a plain "working on it" state and the Ticket Status panel,
+   * while the tool-call detail goes to the CSR console via `agent_actions`.
+   */
   async function handleSend(content: string) {
-    if (!selectedTicketId) return false
-    const response = await fetch(`/api/service-requests/${selectedTicketId}/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    }).catch(() => null)
-    if (!response?.ok) return false
+    const ticketId = selectedTicketId
+    if (!ticketId) return false
 
-    // Appends the row the server wrote — its id and timestamp, so a
-    // refresh renders the same thread rather than a client-invented one.
-    const { message } = await response.json()
-    setMessages((prev) => [...prev, toChatMessage(message, selectedTicketId)])
-    return true
+    setIsAgentWorking(true)
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serviceRequestId: ticketId, message: content }),
+      }).catch(() => null)
+
+      if (!response?.ok || !response.body) return false
+
+      let outcome: "resolved" | "escalated" | null = null
+
+      for await (const event of readChatStream(response.body)) {
+        if (event.type === "accepted" || event.type === "result") {
+          setMessages((prev) => [...prev, toChatMessage(event.message, ticketId)])
+        }
+        if (event.type === "result") outcome = event.outcome
+        if (event.type === "error") return false
+      }
+
+      // The turn may have changed status or priority on the ticket; re-read
+      // the server-rendered list rather than guessing at the new state.
+      if (outcome) router.refresh()
+      return true
+    } finally {
+      setIsAgentWorking(false)
+    }
   }
 
   async function handleEscalate() {
@@ -193,7 +223,12 @@ export function CustomerDashboard({
           ) : (
             <MessageList entries={threadEntries} />
           )}
-          <Composer onSend={handleSend} disabled={!selectedTicketId} />
+          {isAgentWorking ? (
+            <p className="px-4 pb-1 text-[13px] text-muted-foreground" role="status">
+              The servicing agent is working on this…
+            </p>
+          ) : null}
+          <Composer onSend={handleSend} disabled={!selectedTicketId || isAgentWorking} />
         </div>
 
         <TicketStatusPanel

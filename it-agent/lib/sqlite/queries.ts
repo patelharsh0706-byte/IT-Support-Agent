@@ -7,6 +7,7 @@ import {
   chatMessages,
   chatSessions,
   customers,
+  cards,
   serviceRequests,
   severityChanges,
   socialPosts,
@@ -628,6 +629,8 @@ export async function recordAgentAction(params: {
   status: "running" | "ok" | "failed" | "denied"
   detail?: string
   tweetMentionId?: string
+  serviceRequestId?: string
+  chatMessageId?: string
 }) {
   await db.insert(agentActions).values({
     id: `act_${crypto.randomUUID()}`,
@@ -635,6 +638,74 @@ export async function recordAgentAction(params: {
     status: params.status,
     detail: params.detail ?? null,
     tweetMentionId: params.tweetMentionId ?? null,
+    serviceRequestId: params.serviceRequestId ?? null,
+    chatMessageId: params.chatMessageId ?? null,
     timestamp: new Date().toISOString(),
   })
+}
+
+// --- Servicing tool data access (10-llm-integration) ---
+//
+// Every function here takes `customerId` as its FIRST argument, resolved from
+// the session by the caller. No query accepts an id that came from a model.
+
+export async function listCardsForCustomer(customerId: string) {
+  return db
+    .select({
+      id: cards.id,
+      lastFour: cards.lastFour,
+      status: cards.status,
+    })
+    .from(cards)
+    .where(eq(cards.customerId, customerId))
+    .orderBy(asc(cards.lastFour))
+}
+
+/**
+ * Scoped by customer *and* last four. A card belonging to someone else is not
+ * found, rather than found-and-rejected — there is no code path that loads it.
+ */
+export async function getCardForCustomer(customerId: string, lastFour: string) {
+  const [row] = await db
+    .select()
+    .from(cards)
+    .where(and(eq(cards.customerId, customerId), eq(cards.lastFour, lastFour)))
+    .limit(1)
+  return row ?? null
+}
+
+export async function setCardStatus(
+  customerId: string,
+  lastFour: string,
+  status: "active" | "frozen" | "inactive",
+) {
+  const [row] = await db
+    .update(cards)
+    .set({ status })
+    .where(and(eq(cards.customerId, customerId), eq(cards.lastFour, lastFour)))
+    .returning()
+  return row ?? null
+}
+
+export async function getCustomerProfile(customerId: string) {
+  const [row] = await db
+    .select({
+      id: customers.id,
+      name: customers.name,
+      email: customers.email,
+      status: customers.status,
+    })
+    .from(customers)
+    .where(eq(customers.id, customerId))
+    .limit(1)
+  return row ?? null
+}
+
+export async function updateCustomerEmail(customerId: string, email: string) {
+  const [row] = await db
+    .update(customers)
+    .set({ email })
+    .where(eq(customers.id, customerId))
+    .returning({ id: customers.id, email: customers.email })
+  return row ?? null
 }
