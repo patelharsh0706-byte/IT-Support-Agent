@@ -952,6 +952,33 @@ change.
   - No migration needed: Drizzle's `text({ enum })` is type-level only.
   - 87 tests, tsc, lint, build clean.
 
+- **Tool-call log grouped into turns**
+  - The panel rendered one flat list, so three separate conversations
+    looked like a single run of eighteen steps and the newest activity
+    was buried at the bottom. `lib/mock/activity-turns.ts` now groups the
+    log into the turns that produced it: **newest turn first**, each in
+    its own box with its start time, duration and outcome
+    (Resolved / Escalated / Failed / In progress).
+  - **Within a turn the order stays chronological** — a turn read
+    backwards is nonsense, since the agent's reasoning only makes sense
+    top to bottom.
+  - Grouping splits on `classify`+`running` (the pipeline's own first
+    emit) or a two-minute gap. The gap rule means seeded fixture rows and
+    anything written before this pipeline existed still group correctly,
+    despite using different stage vocabulary.
+  - **Bug caught by looking at real output**: the first rule matched any
+    `classify` event, so every turn was split at its own `classify`/`ok`
+    a moment after `classify`/`running`, producing phantom one-step
+    turns. Fixed and given a regression test.
+  - Per-event timestamps added, and the detail line is **no longer
+    truncated** — "confidence 0.90" and "raised by: Fraud language" are
+    exactly what a CSR needs to judge whether to trust the agent.
+    Timestamps render in the viewer's timezone with
+    `suppressHydrationWarning`, which is the idiomatic answer: server and
+    client legitimately differ, and showing UTC would show a CSR a time
+    they are not working in.
+  - 99 tests, tsc, lint and build clean.
+
 ## In Progress
 
 - None.
