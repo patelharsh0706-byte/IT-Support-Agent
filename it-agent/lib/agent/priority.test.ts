@@ -8,6 +8,7 @@ describe("declared defaults", () => {
   it.each([
     ["card_unblock", "high"],
     ["card_activation", "medium"],
+    ["report_lost_stolen", "high"],
     ["unrecognized_transaction", "high"],
     ["duplicate_charge", "medium"],
     ["update_phone", "medium"],

@@ -102,6 +102,7 @@ export const serviceRequests = sqliteTable("service_request", {
     enum: [
       "card_unblock",
       "card_activation",
+      "report_lost_stolen",
       "unrecognized_transaction",
       "duplicate_charge",
       "update_phone",

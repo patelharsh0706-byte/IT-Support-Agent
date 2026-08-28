@@ -22,6 +22,7 @@ export type Intent = (typeof INTENTS)[number]
 export const ISSUES = [
   "card_unblock",
   "card_activation",
+  "report_lost_stolen",
   "unrecognized_transaction",
   "duplicate_charge",
   "update_phone",
@@ -61,6 +62,20 @@ export const ISSUE_CATALOG: Record<Issue, IssueDefinition> = {
     intent: "card_unblock_activation",
     defaultPriority: "medium",
     label: "Card Activation",
+    implemented: true,
+  },
+  /**
+   * The seventh issue, added after live testing showed "block it, it's stolen"
+   * escalating to a human queue. Reporting a card lost or stolen is the most
+   * time-critical thing a cardholder does, and every minute in a queue is a
+   * minute the card still works.
+   *
+   * High by default and never lowered: a stolen card is a live fraud window.
+   */
+  report_lost_stolen: {
+    intent: "card_unblock_activation",
+    defaultPriority: "high",
+    label: "Report Lost or Stolen Card",
     implemented: true,
   },
   update_email: {

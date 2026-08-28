@@ -53,6 +53,39 @@ The model is a **labeller and a writer**, not the decision-maker.
 Every stage emits one `ActivityEvent`, streamed to the Agent Activity panel and
 written to `agent_actions` — one emit, live view and audit trail both.
 
+## A seventh issue: Report Lost or Stolen Card
+
+Added after live testing. *"ok block the card. since it's stolen"* classified
+as `other` and escalated to a human queue — correct at the time, because no
+tool could freeze a card, but wrong as a product: reporting a card stolen is
+the most time-critical thing a cardholder does, and every minute in a queue is
+a minute the card still works.
+
+`freeze_card` is the **only tool that removes a capability** rather than
+granting one. Two things make that acceptable: it is reversible (`unblock_card`
+is in the same scope), and leaving a stolen card live is the worse failure by a
+wide margin. It still refuses to act on a card that is already frozen or was
+never activated, so a misclassification cannot churn state.
+
+**Blocking and unblocking are opposites**, and that is the one distinction the
+classifier must never blur — freezing a card the customer wanted working, or
+unblocking one they just reported stolen, are both serious. Both the
+classifier and the servicing prompt state the distinction explicitly. Verified
+live:
+
+| message | issue | effect |
+|---|---|---|
+| "ok block the card. since it's stolen" | `report_lost_stolen` | 4821 → frozen |
+| "actually I found it, please unblock 4821" | `card_unblock` | 4821 → active |
+| "I've lost my card ending 4821" | `report_lost_stolen` | 4821 → frozen |
+
+Priority is **high** by default and never lowered: a stolen card is a live
+fraud window. No migration was needed — Drizzle's `text({ enum })` is
+type-level only.
+
+Arranging a replacement card is deliberately **not** in scope; the tool says so
+in its own result, so the confirmation cannot promise one.
+
 ## Scope: all six issues (migration 0006)
 
 The first cut covered three issues; the other three had no data model. Migration

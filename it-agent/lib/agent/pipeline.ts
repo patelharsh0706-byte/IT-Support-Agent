@@ -150,7 +150,10 @@ export async function runServicingTurn(input: TurnInput): Promise<TurnResult> {
         "Dispute only ONE of the identical charges — the later of the pair — and leave the other " +
         "standing, because the customer does owe for one. Never dispute both.\n" +
         "For an unrecognised charge, dispute only the specific charge the customer names. " +
-        "Never dispute a charge the customer has not raised.",
+        "Never dispute a charge the customer has not raised.\n" +
+        "Freezing a card and unblocking one are opposites. Only freeze when the customer says the " +
+        "card is lost, stolen or missing. Never freeze a card as a step toward unblocking it, and " +
+        "never unblock a card the customer has just reported lost or stolen.",
       prompt: message,
       onStepFinish: async ({ toolCalls }) => {
         for (const call of toolCalls ?? []) {

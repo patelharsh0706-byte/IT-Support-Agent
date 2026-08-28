@@ -63,19 +63,18 @@ describe("out of scope", () => {
     expect(result.intent).toBeNull()
   })
 
-  // The user's own example, which is deliberately not one of the six.
-  it("a lost card is `other`, not card_unblock", () => {
-    const result = interpret(
-      raw({ issue: "other", confidence: 0.88, reasoning: "Lost card is not a supported issue." }),
-    )
-    expect(result.intent).toBeNull()
+  it("a lost card is now its own issue, not `other`", () => {
+    const result = interpret(raw({ issue: "report_lost_stolen", confidence: 0.9 }))
+    expect(result.intent).toBe("card_unblock_activation")
+    expect(result.notImplemented).toBe(false)
   })
 })
 
-describe("all six issues are serviceable since migration 0006", () => {
+describe("all seven issues are serviceable", () => {
   it.each([
     "card_unblock",
     "card_activation",
+    "report_lost_stolen",
     "unrecognized_transaction",
     "duplicate_charge",
     "update_phone",
@@ -89,8 +88,9 @@ describe("all six issues are serviceable since migration 0006", () => {
 
   it("every issue maps to one of the three intents", () => {
     const intents = new Set(
-      (["card_unblock", "card_activation", "unrecognized_transaction",
-        "duplicate_charge", "update_phone", "update_email"] as const)
+      (["card_unblock", "card_activation", "report_lost_stolen",
+        "unrecognized_transaction", "duplicate_charge", "update_phone",
+        "update_email"] as const)
         .map((issue) => interpret(raw({ issue })).intent),
     )
     expect(intents).toEqual(

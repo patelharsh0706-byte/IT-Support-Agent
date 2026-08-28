@@ -61,6 +61,45 @@ export function createCardTools(customerId: string, record: MutationRecorder = (
       },
     }),
 
+    /**
+     * The only tool in the codebase that *removes* a capability. Two things
+     * make that acceptable: it is reversible (`unblock_card` is right there),
+     * and leaving a stolen card live is the worse failure by a wide margin.
+     *
+     * It still refuses to act on a card that is already frozen or was never
+     * activated, so a misclassification cannot churn state.
+     */
+    freeze_card: tool({
+      description:
+        "Freeze a card immediately because the customer reports it lost or stolen. This stops the card working. Use only when the customer says the card is lost, stolen, missing, or in someone else's hands.",
+      inputSchema: z.object({
+        lastFour,
+        reason: z.string().min(3, "The customer's stated reason, in their words"),
+      }),
+      execute: async ({ lastFour, reason }) => {
+        const card = await getCardForCustomer(customerId, lastFour)
+        if (!card) {
+          return { ok: false as const, reason: `No card ending ${lastFour} on this account.` }
+        }
+        if (card.status === "frozen") {
+          return { ok: false as const, reason: `Card ending ${lastFour} is already frozen.` }
+        }
+        if (card.status === "inactive") {
+          return {
+            ok: false as const,
+            reason: `Card ending ${lastFour} was never activated, so it cannot be used anyway.`,
+          }
+        }
+        const updated = await setCardStatus(customerId, lastFour, "frozen")
+        if (updated) record({ kind: "card_status", lastFour, expected: "frozen" })
+        return {
+          ok: updated !== null,
+          status: updated?.status,
+          note: `Card frozen (${reason}). A replacement is arranged by a human colleague, not here.`,
+        }
+      },
+    }),
+
     activate_card: tool({
       description:
         "Activate a newly issued card that has never been used. Only valid when the card's status is 'inactive'.",

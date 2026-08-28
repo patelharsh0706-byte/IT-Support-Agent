@@ -929,6 +929,29 @@ change.
     the migration made false.
   - Verified: 83 tests, `tsc --noEmit`, lint and build clean.
 
+- **Seventh issue: Report Lost or Stolen Card**
+  - Found by live testing, not by a test: "ok block the card. since it's
+    stolen" classified as `other` and escalated. Correct at the time —
+    nothing could freeze a card — but wrong as a product. Reporting a
+    card stolen is the most time-critical thing a cardholder does, and
+    every minute queued is a minute the card still works.
+  - `freeze_card` is the **only tool that removes a capability**. Judged
+    acceptable because it is reversible (`unblock_card` sits in the same
+    scope) and leaving a stolen card live is much the worse failure. It
+    refuses a card that is already frozen or never activated, so a
+    misclassification cannot churn state.
+  - **Blocking and unblocking are opposites**, and that is the one
+    distinction the classifier must not blur. Stated explicitly in both
+    the classifier and servicing prompts. Verified live: "block it, it's
+    stolen" → frozen, "actually I found it, unblock 4821" → active, "I've
+    lost my card" → frozen.
+  - High priority by default, never lowered — a stolen card is a live
+    fraud window. Arranging a replacement is deliberately out of scope,
+    and the tool says so in its own result so the confirmation cannot
+    promise one.
+  - No migration needed: Drizzle's `text({ enum })` is type-level only.
+  - 87 tests, tsc, lint, build clean.
+
 ## In Progress
 
 - None.

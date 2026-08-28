@@ -54,9 +54,15 @@ describe("Invariant 3 — capability scope", () => {
   it("a Card Servicing turn is handed only card tools", () => {
     expect(toolNamesForIntent("card_unblock_activation")).toEqual([
       "activate_card",
+      "freeze_card",
       "get_cards",
       "unblock_card",
     ])
+  })
+
+  it("freeze_card takes no customer id, only lastFour and a reason", () => {
+    const shape = schemaKeys(createCardTools(CUSTOMER).freeze_card.inputSchema)
+    expect(shape.sort()).toEqual(["lastFour", "reason"])
   })
 
   it("a Card Servicing turn cannot reach a profile tool", () => {
