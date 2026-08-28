@@ -759,3 +759,46 @@ export async function updateCustomerPhone(customerId: string, phone: string) {
     .returning({ id: customers.id, phone: customers.phone })
   return row ?? null
 }
+
+/**
+ * Writes a finished servicing turn back onto the ticket.
+ *
+ * Without this the agent could classify, act, verify and reply while the
+ * ticket still read "Raised / Medium / General Servicing" — the row as it was
+ * created. The classification columns existed from `05-sqlite` and nothing had
+ * ever filled them.
+ *
+ * `escalatedAt` is set once and never reset: it is the time-in-escalation
+ * clock basis, and restarting it would hide how long a case has been stuck
+ * (`lib/mock/types.ts`).
+ */
+export async function applyTurnOutcome(params: {
+  serviceRequestId: string
+  status: "resolved" | "initiated" | "escalated"
+  intent: Intent | null
+  issue: string | null
+  priority: "low" | "medium" | "high"
+  confidence: number
+}) {
+  const now = new Date().toISOString()
+  const existing = await getServiceRequestById(params.serviceRequestId)
+
+  const [row] = await db
+    .update(serviceRequests)
+    .set({
+      status: params.status,
+      intent: params.intent,
+      issue: params.issue as typeof serviceRequests.$inferInsert.issue,
+      priority: params.priority,
+      classificationIntent: params.issue,
+      classificationConfidence: params.confidence,
+      escalatedAt:
+        params.status === "escalated"
+          ? (existing?.escalatedAt ?? now)
+          : (existing?.escalatedAt ?? null),
+      updatedAt: now,
+    })
+    .where(eq(serviceRequests.id, params.serviceRequestId))
+    .returning()
+  return row ?? null
+}

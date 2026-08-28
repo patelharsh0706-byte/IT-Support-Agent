@@ -4,6 +4,7 @@ import { requireCustomer } from "@/lib/auth/session"
 import { runServicingTurn } from "@/lib/agent/pipeline"
 import type { ActivityEvent } from "@/lib/agent/events"
 import {
+  applyTurnOutcome,
   getServiceRequestById,
   insertChatMessage,
   recordAgentAction,
@@ -88,6 +89,19 @@ export async function POST(request: NextRequest) {
           customerId: customer.id,
           message,
           emit,
+        })
+
+        // The ticket carries the outcome, not just the audit log: status,
+        // the classified intent and issue, the priority the pipeline decided,
+        // and the confidence behind it. Without this the customer's Ticket
+        // Status panel stays on "Raised" forever.
+        await applyTurnOutcome({
+          serviceRequestId,
+          status: result.outcome,
+          intent: result.classification.intent,
+          issue: result.classification.issue === "other" ? null : result.classification.issue,
+          priority: result.priority?.priority ?? "medium",
+          confidence: result.classification.confidence,
         })
 
         const reply = await insertChatMessage({

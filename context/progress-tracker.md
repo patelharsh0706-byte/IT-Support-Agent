@@ -979,6 +979,26 @@ change.
     they are not working in.
   - 99 tests, tsc, lint and build clean.
 
+- **A finished turn now writes back to the ticket**
+  - Reported from the UI: a ticket still read "Raised / Medium / General
+    Servicing" after the agent had classified it, acted, verified and
+    replied. The row was untouched — `status=open`, `intent=null`,
+    `issue=null`, `priority=medium` (the creation default), and the
+    `classification_intent` / `classification_confidence` columns that
+    have existed since `05-sqlite` had never been written by anything.
+  - The pipeline emitted and the route persisted messages and audit rows,
+    but nothing closed the loop back onto `service_request`. Added
+    `applyTurnOutcome()`, called from the chat route so the pipeline stays
+    pure: status, intent, issue, the priority the pipeline decided, and
+    the classifier's confidence.
+  - `escalatedAt` is set once and never reset — it is the
+    time-in-escalation clock basis, and restarting it would hide how long
+    a case has been stuck.
+  - Verified across all three terminal states: card unblock →
+    `resolved / card_unblock / high / 0.9`, duplicate charge →
+    `initiated / duplicate_charge`, and an out-of-scope question →
+    `escalated` with `escalated_at` set.
+
 ## In Progress
 
 - None.
