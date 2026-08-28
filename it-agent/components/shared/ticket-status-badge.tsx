@@ -12,6 +12,9 @@ export const ticketStatusLabel: Record<TicketStatus, string> = {
   in_progress: "In progress",
   escalated: "Escalated",
   resolved: "Resolved",
+  // Deliberately not "Resolved": the charge is suspended and an investigation
+  // is running, which is a different thing to tell a customer.
+  initiated: "Dispute opened",
 }
 
 const classNameByStatus: Record<TicketStatus, string> = {
@@ -20,6 +23,7 @@ const classNameByStatus: Record<TicketStatus, string> = {
   in_progress: "bg-primary/10 text-primary",
   escalated: "bg-state-error/10 text-state-error",
   resolved: "bg-state-success/10 text-state-success",
+  initiated: "bg-primary/10 text-primary",
 }
 
 interface TicketStatusBadgeProps {

@@ -3,7 +3,7 @@ import { generateText, stepCountIs, type LanguageModel } from "ai"
 import { createMutationLog } from "@/lib/tools/mutations"
 import { classify, type Classification } from "./classify"
 import { activityEvent, noopEmit, type Emit } from "./events"
-import { ISSUE_CATALOG } from "./intents"
+import { ISSUE_CATALOG, type Intent } from "./intents"
 import { decidePriority } from "./priority"
 import { servicingModel } from "./provider"
 import { toolsForIntent } from "./scopes"
@@ -19,7 +19,18 @@ import { verifyAll } from "./verify"
  * mocking a model, and fast enough for a live demo."
  */
 
-export type Outcome = "resolved" | "escalated"
+/**
+ * `initiated` is a dispute's terminal state and is deliberately not
+ * `resolved`: under Regulation Z a valid dispute suspends the charge and opens
+ * a 30-90 day investigation. Telling a customer their dispute is "resolved"
+ * the moment it is raised would be untrue (`context/project-overview.md`).
+ */
+export type Outcome = "resolved" | "initiated" | "escalated"
+
+/** Which intents end in an investigation rather than a completed action. */
+function terminalOutcomeFor(intent: Intent): Extract<Outcome, "resolved" | "initiated"> {
+  return intent === "unrecognized_transaction" ? "initiated" : "resolved"
+}
 
 export interface TurnResult {
   outcome: Outcome
@@ -131,7 +142,15 @@ export async function runServicingTurn(input: TurnInput): Promise<TurnResult> {
         "You are an American Express servicing agent acting for the signed-in cardholder. " +
         "Use the tools available to resolve the request. Look up current state before changing it. " +
         "Never ask for or accept an account identifier — you already act on the right account. " +
-        "If the tools cannot resolve it, say so plainly rather than inventing an outcome.",
+        "If the tools cannot resolve it, say so plainly rather than inventing an outcome.\n\n" +
+        // Disputing both halves of a duplicated pair claims back money the
+        // customer genuinely owes for one purchase. Only the extra charge is
+        // disputable.
+        "For a duplicate charge, the customer made the purchase once and was billed twice. " +
+        "Dispute only ONE of the identical charges — the later of the pair — and leave the other " +
+        "standing, because the customer does owe for one. Never dispute both.\n" +
+        "For an unrecognised charge, dispute only the specific charge the customer names. " +
+        "Never dispute a charge the customer has not raised.",
       prompt: message,
       onStepFinish: async ({ toolCalls }) => {
         for (const call of toolCalls ?? []) {
@@ -175,8 +194,18 @@ export async function runServicingTurn(input: TurnInput): Promise<TurnResult> {
     )
   }
 
-  // ---- 7. Confirm (model call 2) ------------------------------------------
-  const partial = { outcome: "resolved" as const, classification, priority }
+  // ---- 7. Terminal state, then confirm (model call 2) ---------------------
+  const outcome = terminalOutcomeFor(classification.intent)
+  await emit(
+    activityEvent(
+      "confirm",
+      "running",
+      outcome === "initiated"
+        ? "Charge suspended and an investigation opened — this is not a resolution."
+        : "Action completed and verified.",
+    ),
+  )
+  const partial = { outcome, classification, priority }
   const reply = await compose(input, partial, verifications.map((v) => v.detail).join(" "))
   await emit(activityEvent("confirm", "ok", "Confirmed to the customer."))
 

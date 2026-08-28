@@ -12,6 +12,9 @@ export const customers = sqliteTable(
     clerkUserId: text("clerk_user_id"),
     name: text("name").notNull(),
     email: text("email").notNull(),
+    // Nullable: seeded customers predate this column, and not every customer
+    // has given a number. Added in 0006 for the Update Phone Number issue.
+    phone: text("phone"),
     status: text("status", { enum: ["active", "closed", "unknown"] })
       .notNull()
       .default("active"),
@@ -42,6 +45,39 @@ export const cards = sqliteTable("cards", {
     .default(sql`(current_timestamp)`),
 })
 
+/**
+ * Card transactions. Added in 0006 — the Transaction & Dispute intent had no
+ * data model at all before this, so both of its issues classified correctly
+ * and then escalated for want of anything to act on.
+ */
+export const transactions = sqliteTable("transactions", {
+  id: text("id").primaryKey(),
+  customerId: text("customer_id")
+    .notNull()
+    .references(() => customers.id, { onDelete: "cascade" }),
+  cardId: text("card_id")
+    .notNull()
+    .references(() => cards.id, { onDelete: "cascade" }),
+  merchant: text("merchant").notNull(),
+  /** Minor units (cents), so no float ever touches money. */
+  amountMinor: integer("amount_minor").notNull(),
+  currency: text("currency").notNull().default("USD"),
+  postedAt: text("posted_at").notNull(),
+  /**
+   * `disputed` means the charge is suspended and an investigation is open —
+   * the Reg Z posture. `reversed` is the outcome of one, not its start.
+   */
+  status: text("status", {
+    enum: ["posted", "disputed", "reversed"],
+  })
+    .notNull()
+    .default("posted"),
+  /** Set when a dispute is initiated, so the 30-90 day clock has a start. */
+  disputedAt: text("disputed_at"),
+  disputeReason: text("dispute_reason"),
+  createdAt: text("created_at").notNull(),
+})
+
 export const serviceRequests = sqliteTable("service_request", {
   id: text("id").primaryKey(),
   customerId: text("customer_id").references(() => customers.id, {
@@ -59,10 +95,27 @@ export const serviceRequests = sqliteTable("service_request", {
       "update_contact_info",
     ],
   }),
+  // The finer-grained issue behind the intent. `intent` carries the three
+  // servicing groups; this carries which of the six issues it actually is,
+  // which the CSR queue and the KPIs both need. Nullable until classified.
+  issue: text("issue", {
+    enum: [
+      "card_unblock",
+      "card_activation",
+      "unrecognized_transaction",
+      "duplicate_charge",
+      "update_phone",
+      "update_email",
+    ],
+  }),
   title: text("title").notNull(),
   priority: text("priority", { enum: ["low", "medium", "high"] }).notNull(),
+  // `initiated` is the terminal state for a dispute, and is deliberately not
+  // `resolved`. Under Regulation Z a valid dispute suspends the charge and
+  // opens an investigation running 30-90 days; calling that "resolved" would
+  // misstate how card disputes work (`context/project-overview.md`).
   status: text("status", {
-    enum: ["open", "in_progress", "resolved", "escalated"],
+    enum: ["open", "in_progress", "resolved", "escalated", "initiated"],
   }).notNull(),
   currentSeverity: text("current_severity", {
     enum: ["low", "medium", "high"],

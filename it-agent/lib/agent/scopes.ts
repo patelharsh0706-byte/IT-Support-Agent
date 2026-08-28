@@ -3,6 +3,7 @@ import type { ToolSet } from "ai"
 import { createCardTools } from "@/lib/tools/cards"
 import type { MutationRecorder } from "@/lib/tools/mutations"
 import { createProfileTools } from "@/lib/tools/profile"
+import { createTransactionTools } from "@/lib/tools/transactions"
 import type { Intent } from "./intents"
 
 /**
@@ -33,9 +34,7 @@ export function toolsForIntent(
       return createProfileTools(customerId, record)
 
     case "unrecognized_transaction":
-      // No dispute tools exist yet — the schema has no transactions table.
-      // An empty scope means the pipeline escalates rather than improvising.
-      return {}
+      return createTransactionTools(customerId, record)
 
     default: {
       const exhaustive: never = intent

@@ -73,22 +73,19 @@ export const ISSUE_CATALOG: Record<Issue, IssueDefinition> = {
     intent: "unrecognized_transaction",
     defaultPriority: "high",
     label: "Unrecognized Transaction",
-    implemented: false,
-    blockedBy: "no transactions table in the schema yet",
+    implemented: true,
   },
   duplicate_charge: {
     intent: "unrecognized_transaction",
     defaultPriority: "medium",
     label: "Duplicate Charge",
-    implemented: false,
-    blockedBy: "no transactions table in the schema yet",
+    implemented: true,
   },
   update_phone: {
     intent: "update_contact_info",
     defaultPriority: "medium",
     label: "Update Phone Number",
-    implemented: false,
-    blockedBy: "no phone column on customers yet",
+    implemented: true,
   },
 }
 

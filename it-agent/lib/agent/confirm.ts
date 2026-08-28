@@ -15,7 +15,7 @@ import type { decidePriority } from "./priority"
  */
 
 export interface ComposeInput {
-  outcome: "resolved" | "escalated"
+  outcome: "resolved" | "initiated" | "escalated"
   classification: Classification
   priority: ReturnType<typeof decidePriority> | null
   /** Verification detail, or the escalation reason. */
@@ -30,6 +30,7 @@ Rules:
 - State only what the outcome says happened. Never claim an action that is not in the outcome.
 - Never state account numbers, balances, or amounts.
 - If the outcome is escalated, say plainly that a colleague will pick it up, and why, without blaming the customer.
+- If the outcome is initiated, this is a dispute: the charge is suspended and an investigation has opened. Say that clearly. Do NOT say the issue is resolved, fixed or refunded — it is not, and saying so would be untrue.
 - Do not promise a timescale unless one is given to you.`
 
 export async function composeReply(input: ComposeInput): Promise<string> {
@@ -63,6 +64,9 @@ export async function composeReply(input: ComposeInput): Promise<string> {
 
 /** Used when the model is unavailable. Says the same thing, less warmly. */
 export function fallbackReply(input: ComposeInput): string {
+  if (input.outcome === "initiated") {
+    return "We've suspended that charge and opened an investigation. These take 30 to 90 days, and we'll come back to you here with the outcome."
+  }
   return input.outcome === "resolved"
     ? "That's now sorted on your account. If anything still looks wrong, reply here and we'll take another look."
     : "We haven't been able to complete this automatically, so a colleague will pick it up and come back to you here."

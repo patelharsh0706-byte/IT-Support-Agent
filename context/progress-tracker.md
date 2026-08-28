@@ -835,7 +835,9 @@ change.
     `inputSchema` (not `parameters`), step limits use
     `stopWhen: stepCountIs(n)` (not `maxSteps`), and `onStepFinish` is a
     deprecated alias for `onStepEnd`.
-  - **Scope: 3 of 6 issues.** Card Unblock, Card Activation and Update
+  - **Scope: all 6 issues after migration 0006** (was 3 of 6 at first
+    commit — see the 0006 entry below).
+  - **Originally 3 of 6 issues.** Card Unblock, Card Activation and Update
     Email work end to end. Unrecognized Transaction and Duplicate Charge
     (no `transactions` table) and Update Phone (no `customers.phone`)
     classify correctly and then escalate naming what blocks them. Two
@@ -895,6 +897,37 @@ change.
   - **Live push to a second browser is out of scope**, per invariant 7
     (no real-time services). A CSR watching a case sees the events on
     load or refresh, from `agent_actions`, not pushed live.
+
+- **0006 — the data model the other three issues needed**
+  - Closed all four gaps in one migration: a `transactions` table
+    (amounts in **minor units**, so no float touches money),
+    `customers.phone`, `service_request.issue` (the six issues; only the
+    three-value `intent` existed), and `initiated` on
+    `service_request.status`. The status change needed no SQL — Drizzle's
+    `text({ enum })` is type-level only.
+  - **All six issues now work end to end against a live model.** Verified
+    in one run: card unblock (4821 frozen → active), card activation
+    (0093 → active), email changed, phone set, duplicate charge and
+    unrecognized transaction both **initiated** with the right charges
+    disputed. Untouched charges stayed `posted` — no over-reach.
+  - **A dispute initiates, it does not resolve.** `terminalOutcomeFor()`
+    returns `initiated` for the Transaction & Dispute intent, the
+    confirmation prompt is forbidden from saying resolved/fixed/refunded
+    for it, and the customer's Ticket Status timeline shows "Dispute
+    opened" as its own step. No tool can reverse a charge — a reversal is
+    the outcome of an investigation, not the agent's to make, and a test
+    asserts no scope exposes one.
+  - **Live testing caught a real domain error.** The model initially
+    disputed *both* halves of a duplicated pair. The customer made that
+    purchase once and owes for one; disputing both claims back money they
+    genuinely spent. The servicing prompt now states only one of an
+    identical pair is disputable — verified 1 of 2. Worth noting it
+    disputed the earlier rather than the later charge as the prompt
+    suggests; either is defensible, only the count matters.
+  - Five tests failed on the migration and were **updated rather than
+    deleted** — they asserted the old "not implemented" reality, which
+    the migration made false.
+  - Verified: 83 tests, `tsc --noEmit`, lint and build clean.
 
 ## In Progress
 

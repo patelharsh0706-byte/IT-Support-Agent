@@ -72,20 +72,31 @@ describe("out of scope", () => {
   })
 })
 
-describe("recognised but not yet serviceable", () => {
-  it.each(["unrecognized_transaction", "duplicate_charge", "update_phone"] as const)(
-    "%s classifies but is flagged not implemented",
-    (issue) => {
-      const result = interpret(raw({ issue, confidence: 0.95 }))
-      expect(result.issue).toBe(issue)
-      expect(result.notImplemented).toBe(true)
-      expect(result.blockedBy).toBeTruthy()
-    },
-  )
+describe("all six issues are serviceable since migration 0006", () => {
+  it.each([
+    "card_unblock",
+    "card_activation",
+    "unrecognized_transaction",
+    "duplicate_charge",
+    "update_phone",
+    "update_email",
+  ] as const)("%s is implemented", (issue) => {
+    const result = interpret(raw({ issue, confidence: 0.95 }))
+    expect(result.issue).toBe(issue)
+    expect(result.notImplemented).toBe(false)
+    expect(result.intent).not.toBeNull()
+  })
 
-  it("implemented issues are not flagged", () => {
-    for (const issue of ["card_unblock", "card_activation", "update_email"] as const) {
-      expect(interpret(raw({ issue })).notImplemented).toBe(false)
-    }
+  it("every issue maps to one of the three intents", () => {
+    const intents = new Set(
+      (["card_unblock", "card_activation", "unrecognized_transaction",
+        "duplicate_charge", "update_phone", "update_email"] as const)
+        .map((issue) => interpret(raw({ issue })).intent),
+    )
+    expect(intents).toEqual(
+      new Set(["card_unblock_activation", "unrecognized_transaction", "update_contact_info"]),
+    )
   })
 })
+
+

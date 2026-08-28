@@ -65,12 +65,21 @@ describe("Invariant 3 — capability scope", () => {
 
   it("an Account & Profile turn cannot reach a card tool", () => {
     const names = toolNamesForIntent("update_contact_info")
-    expect(names).toEqual(["get_profile", "update_email"])
+    expect(names).toEqual(["get_profile", "update_email", "update_phone"].sort())
     expect(names).not.toContain("unblock_card")
   })
 
-  it("dispute has an empty scope until the schema supports it", () => {
-    expect(toolNamesForIntent("unrecognized_transaction")).toEqual([])
+  it("a Dispute turn gets only transaction tools", () => {
+    const names = toolNamesForIntent("unrecognized_transaction")
+    expect(names).toEqual(["get_transactions", "initiate_dispute"])
+    expect(names).not.toContain("unblock_card")
+    expect(names).not.toContain("update_email")
+  })
+
+  it("no scope can reverse a charge — a reversal is an investigation outcome", () => {
+    for (const intent of ["card_unblock_activation", "unrecognized_transaction", "update_contact_info"] as const) {
+      expect(toolNamesForIntent(intent).some((n) => n.includes("revers") || n.includes("refund"))).toBe(false)
+    }
   })
 })
 

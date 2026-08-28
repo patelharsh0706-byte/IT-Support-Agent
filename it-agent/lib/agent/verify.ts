@@ -1,6 +1,7 @@
 import { verifyCardStatus } from "@/lib/tools/cards"
 import type { Mutation } from "@/lib/tools/mutations"
-import { verifyEmail } from "@/lib/tools/profile"
+import { verifyEmail, verifyPhone } from "@/lib/tools/profile"
+import { verifyDispute } from "@/lib/tools/transactions"
 
 /**
  * Invariant 2: "Every executed tool call is verified — an independent,
@@ -28,6 +29,26 @@ export async function verifyMutation(
       detail: result.matched
         ? `Card ending ${mutation.lastFour} re-read as ${result.observed}.`
         : `Card ending ${mutation.lastFour} reads ${result.observed ?? "missing"}, expected ${result.expected}.`,
+    }
+  }
+
+  if (mutation.kind === "dispute") {
+    const result = await verifyDispute(customerId, mutation.transactionId)
+    return {
+      matched: result.matched,
+      detail: result.matched
+        ? `Charge ${mutation.transactionId} re-read as disputed; investigation open.`
+        : `Charge ${mutation.transactionId} reads ${result.observed ?? "missing"}, expected disputed.`,
+    }
+  }
+
+  if (mutation.kind === "phone") {
+    const result = await verifyPhone(customerId, mutation.expected)
+    return {
+      matched: result.matched,
+      detail: result.matched
+        ? `Phone re-read as ${result.observed}.`
+        : `Phone reads ${result.observed ?? "missing"}, expected ${result.expected}.`,
     }
   }
 

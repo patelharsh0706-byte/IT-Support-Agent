@@ -13,6 +13,8 @@
 export type Mutation =
   | { kind: "card_status"; lastFour: string; expected: "active" | "frozen" | "inactive" }
   | { kind: "email"; expected: string }
+  | { kind: "phone"; expected: string }
+  | { kind: "dispute"; transactionId: string }
 
 export type MutationRecorder = (mutation: Mutation) => void
 

@@ -10,6 +10,7 @@ import {
   cards,
   serviceRequests,
   severityChanges,
+  transactions,
   socialPosts,
   tweetMentions,
   tweetReplies,
@@ -693,6 +694,7 @@ export async function getCustomerProfile(customerId: string) {
       id: customers.id,
       name: customers.name,
       email: customers.email,
+      phone: customers.phone,
       status: customers.status,
     })
     .from(customers)
@@ -707,5 +709,53 @@ export async function updateCustomerEmail(customerId: string, email: string) {
     .set({ email })
     .where(eq(customers.id, customerId))
     .returning({ id: customers.id, email: customers.email })
+  return row ?? null
+}
+
+// --- Transactions and profile (0006) ---
+
+export async function listTransactionsForCustomer(customerId: string, limit = 20) {
+  return db
+    .select()
+    .from(transactions)
+    .where(eq(transactions.customerId, customerId))
+    .orderBy(desc(transactions.postedAt))
+    .limit(limit)
+}
+
+/** Scoped by customer, so another customer's charge is not found. */
+export async function getTransactionForCustomer(customerId: string, transactionId: string) {
+  const [row] = await db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.customerId, customerId), eq(transactions.id, transactionId)))
+    .limit(1)
+  return row ?? null
+}
+
+/**
+ * Suspends the charge and opens an investigation — the Reg Z posture. This is
+ * deliberately not a reversal: `reversed` is the outcome of an investigation,
+ * not its start.
+ */
+export async function markTransactionDisputed(
+  customerId: string,
+  transactionId: string,
+  reason: string,
+) {
+  const [row] = await db
+    .update(transactions)
+    .set({ status: "disputed", disputedAt: new Date().toISOString(), disputeReason: reason })
+    .where(and(eq(transactions.customerId, customerId), eq(transactions.id, transactionId)))
+    .returning()
+  return row ?? null
+}
+
+export async function updateCustomerPhone(customerId: string, phone: string) {
+  const [row] = await db
+    .update(customers)
+    .set({ phone })
+    .where(eq(customers.id, customerId))
+    .returning({ id: customers.id, phone: customers.phone })
   return row ?? null
 }

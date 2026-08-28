@@ -72,13 +72,19 @@ describe("gates that stop a turn before any tool runs", () => {
     expect(result.escalationReason).toContain("no transactions table")
   })
 
-  it("escalates when the intent has an empty tool scope", async () => {
-    const { result, events } = await run(
-      classification({ issue: "unrecognized_transaction", intent: "unrecognized_transaction" }),
-    )
-    expect(result.outcome).toBe("escalated")
-    expect(result.escalationReason).toMatch(/no servicing tools/i)
-    expect(events.some((e) => e.stage === "execute")).toBe(false)
+  // Since 0006 every intent has tools, so the empty-scope branch is defensive
+  // rather than reachable. This asserts the reachable half: each intent is
+  // handed a non-empty, correctly-partitioned tool set.
+  it("every intent now has a non-empty scope", async () => {
+    for (const intent of [
+      "card_unblock_activation",
+      "unrecognized_transaction",
+      "update_contact_info",
+    ] as const) {
+      const { events } = await run(classification({ intent, issue: "card_unblock" }))
+      const authorize = events.find((e) => e.stage === "authorize")
+      expect(authorize?.detail).toMatch(/In scope for this turn: \w+/)
+    }
   })
 })
 

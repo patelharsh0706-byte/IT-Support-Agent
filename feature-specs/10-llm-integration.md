@@ -53,19 +53,47 @@ The model is a **labeller and a writer**, not the decision-maker.
 Every stage emits one `ActivityEvent`, streamed to the Agent Activity panel and
 written to `agent_actions` — one emit, live view and audit trail both.
 
-## Scope: three issues
+## Scope: all six issues (migration 0006)
 
-`cards.status` and `customers.email` exist, so **Card Unblock**, **Card
-Activation** and **Update Email** work end to end.
+The first cut covered three issues; the other three had no data model. Migration
+`0006` closed all four gaps:
 
-Deferred, because the schema cannot express them: **Unrecognized Transaction**
-and **Duplicate Charge** (no `transactions` table) and **Update Phone Number**
-(no `customers.phone`). They classify correctly and then escalate with the
-reason, rather than pretending. Two further gaps for that migration:
-`service_request` has no `issue` column, and `status` has no `initiated` — the
-terminal state disputes require under Reg Z.
+| Gap | Fix |
+|---|---|
+| no `transactions` table | created — amounts in **minor units**, so no float touches money |
+| no `customers.phone` | added, nullable |
+| no `issue` column (only the 3-value `intent`) | added, six values |
+| `status` had no `initiated` | added — type-level only in Drizzle, so no SQL |
 
-**Success criterion 1 (all six issues) is therefore not met by this unit.**
+All six issues now work end to end, verified live:
+
+| Issue | Outcome | Effect |
+|---|---|---|
+| Card Unblock | resolved | 4821 frozen → active |
+| Card Activation | resolved | 0093 inactive → active |
+| Update Email | resolved | email changed |
+| Update Phone | resolved | phone set |
+| Duplicate Charge | **initiated** | one of the pair disputed |
+| Unrecognized Transaction | **initiated** | named charge disputed |
+
+### A dispute initiates; it does not resolve
+
+`terminalOutcomeFor()` returns `initiated` for the Transaction & Dispute
+intent. Under Reg Z a valid dispute suspends the charge and opens a 30–90 day
+investigation, so telling a customer it is "resolved" the moment they raise it
+would be untrue. The confirmation prompt is explicitly forbidden from saying
+resolved, fixed or refunded for that outcome, and the customer's Ticket Status
+timeline shows **"Dispute opened"** as a distinct step.
+
+No tool can reverse a charge. A reversal is the *outcome* of an investigation,
+not the agent's to make — a test asserts no scope exposes one.
+
+### Duplicate charges: only one side is disputed
+
+Caught in live testing — the model initially disputed **both** halves of a
+duplicated pair. The customer made that purchase once and owes for one of them;
+disputing both claims back money they genuinely spent. The servicing prompt now
+states that only one of an identical pair is disputable. Verified: 1 of 2.
 
 ## Provider
 
