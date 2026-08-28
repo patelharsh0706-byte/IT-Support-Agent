@@ -72,29 +72,31 @@ implementation produced it. `PublishedReply` is
   grievance, an account-closure threat, a regulator threat, and **two
   non-grievances** (praise, and an unrelated brand mention) so the urgency
   rules have negative cases to get wrong.
-- **`LiveTweetSource` (opt-in, `TWEET_SOURCE=live`).** Browser-session
-  automation (the XActions approach), not the X API — API access is priced
-  past a prototype, and the write tier especially so. It needs **both**
-  session cookies: `X_AUTH_TOKEN` (`auth_token`) and `X_CSRF_TOKEN` (`ct0`,
-  which is also the `x-csrf-token` header). Search is login-gated — the
-  unauthenticated path reaches profiles and timelines only, and the brand's
-  own timeline is the brand talking, not customers complaining.
+- **~~`LiveTweetSource` (opt-in, `TWEET_SOURCE=live`)`~~ — attempted, then
+  removed (2026-08-28).** The plan was browser-session automation over X's
+  internal GraphQL API (the XActions approach), since the official API is
+  priced past a prototype and the write tier especially so. It does not work
+  from a server, and the reason is not fixable by us: **X enforces a
+  per-request `x-client-transaction-id`** derived from page state. Omitting it
+  returns 404; replaying a captured one returns 403.
 
-  **XActions is ported, not installed.** `xactions@3.5.0` declares 35 direct
-  dependencies including Prisma, Express, Puppeteer, `node-cron`, `bull`,
-  `redis` and Stripe — a second ORM, a second HTTP server and a scheduler,
-  which invariants 6 and 7 rule out. Two of its functions are ported to
-  TypeScript under `lib/social/vendor/xactions/`, Apache-2.0 attribution
-  intact. Note that upstream's `replyToTweet` wraps `postTweet`, so the
-  CreateTweet mutation is necessarily present — but the ported module exports
-  exactly one write function and it always sets `in_reply_to_tweet_id`. There
-  is no exported path that posts a standalone tweet, quotes, deletes or
-  schedules one.
+  This was verified against a real logged-in session by replaying a browser's
+  own request and removing one variable at a time. Everything else was
+  correct — the pinned bearer token was byte-identical to the browser's, two
+  cookies (`auth_token`, `ct0`) were sufficient, the `SearchTimeline` and
+  `CreateTweet` query ids matched the live bundle exactly — and it still
+  failed. Two traps cost real time and are worth knowing: `guest/activate.json`
+  and `1.1/account/settings.json` are both retired and 404 in a way that mimics
+  a credential failure, and X returns 404 rather than 401/403 for an
+  unrecognised request, so "wrong id" and "no such endpoint" are
+  indistinguishable by status code.
 
-Selection is one env var read in one factory. If `live` is set and the
-credential is missing, the factory **fails loudly at the call site** — it
-must never silently fall back to fixtures. A demo quietly showing canned
-tweets while claiming to be live is worse than one that errors.
+  The ported XActions code was deleted with it — roughly 600 lines of
+  third-party code that could not run, plus its Apache-2.0 attribution. No
+  third-party code remains in this repo. `TweetSource` stays the seam: a live
+  adapter drops in without any other change if the blocker is solved, or if
+  the fetch moves into a real browser. `getTweetSource()` throws on
+  `TWEET_SOURCE=live` rather than silently serving fixtures.
 
 **Handles in the committed fixture corpus are anonymised.** No real
 individual's grievance ships in the repo, per the plan's risk note.
@@ -237,12 +239,13 @@ column exists for it, the route does not.
 
 ## UI
 
-- **`app/admin/(console)/reports/agent/twitter/page.tsx`** — "Twitter Agents",
-  nested in the rail as **Reports → Agent → Twitter Agents** rather than flat
-  alongside `reports/dashboard` and `reports/grievances`. (This spec first said
-  `reports/mentions`; the nesting was the user's explicit direction, and it
-  reuses the `AdminNavGroup level={1}` / `AdminNavLink level={2}` pattern that
-  Conversations → Channels already uses.) Server component,
+- **`app/admin/(console)/agents/twitter/page.tsx`** — "Twitter Agents", under
+  a **top-level `Agents` group** in the rail, a sibling of Conversations and
+  Reports rather than nested inside Reports. (This spec first said
+  `reports/mentions`, then `reports/agent/twitter`; both put it under Reports.
+  It sits outside on the user's explicit direction — an agent surface is
+  something a CSR *acts on*, not a report they read, and burying it one level
+  down made it easy to miss.) Server component,
   `export const dynamic = "force-dynamic"` (same reason as
   `reports/grievances/page.tsx` — a static prerender would freeze the read).
 - **Time windows.** The feed filters by 6h / 12h / 24h on `posted_at`,

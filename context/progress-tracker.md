@@ -719,6 +719,16 @@ change.
     `TWEET_SOURCE=live` and **fails loudly** without credentials — it
     never falls back to fixtures, because a demo quietly showing canned
     tweets while claiming to be live is worse than one that errors.
+  - **Vendored XActions code removed (2026-08-28).** It was ported rather
+    than installed (`xactions@3.5.0` declares 35 direct dependencies
+    including Prisma, Express, Puppeteer, `node-cron`, `bull`, `redis` and
+    Stripe — a second ORM, a second HTTP server and a scheduler, which
+    invariants 6 and 7 forbid), but once the live path proved unworkable it
+    was ~600 lines of third-party code that could not run. Deleted along
+    with `live-tweet-source.ts` and the Apache-2.0 attribution it required.
+    **No third-party code remains in the repo.** `TweetSource` stays the
+    seam; `getTweetSource()` now throws on `TWEET_SOURCE=live` instead of
+    silently serving fixtures. Original note follows for the record.
   - **XActions ported, not installed.** `xactions@3.5.0` declares 35
     direct dependencies including Prisma, Express, Puppeteer, `node-cron`,
     `bull`, `redis` and Stripe — a second ORM, a second HTTP server and a
@@ -746,11 +756,13 @@ change.
   - **`lib/social/reply-guard.ts` blocks, not warns** — card-like digit
     runs, last-four, security codes, amounts, balances and transaction
     ids, each naming the matched rule so a rejection is fixable.
-  - **Nav:** `Reports → Agent → Twitter Agents`, reusing the
-    `AdminNavGroup level={1}` / `AdminNavLink level={2}` nesting
-    Conversations → Channels already uses. Route is
-    `reports/agent/twitter`, not the spec's original `reports/mentions`;
-    the spec has been updated rather than left to drift.
+  - **Nav:** a top-level `Agents` group containing `Twitter Agents`, a
+    sibling of Conversations and Reports. It was first built nested as
+    `Reports → Agent → Twitter Agents`; moved out on the user's direction
+    because an agent surface is something a CSR acts on rather than a
+    report they read, and one level down made it easy to miss. Route is
+    `agents/twitter` (not the spec's original `reports/mentions`); the
+    spec has been updated rather than left to drift.
   - **Two real defects the fixture corpus caught that the unit tests did
     not.** (a) Closure markers only matched "closed *my* card", so a
     churned customer saying "closed *the* card and moved everything to
@@ -991,6 +1003,13 @@ change.
 
 - Stack in place before this unit: Next.js 16.3.0 (App Router), React 19,
   Tailwind CSS v4, TypeScript strict. App lives in `it-agent/`.
+- **Moving a route file requires restarting `next dev` with
+  `rm -rf it-agent/.next/dev`.** Turbopack panics in a loop when a route
+  disappears under a running dev server, and the symptom is a page that
+  reloads endlessly — which reads as "login is broken", not as a build
+  problem. `npm run build` passing does not clear it: that is a separate
+  production build. Full rule and the error signature in
+  `context/code-standards.md`, Next.js section.
 - Next.js treats `app/` folders starting with `_` as **private folders**,
   excluded from routing. The `app/_design-check/` route used to verify spec
   `01-design-system` was therefore type-checked but never actually

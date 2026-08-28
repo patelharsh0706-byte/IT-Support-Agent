@@ -1,5 +1,3 @@
-import { MAX_TWEET_LENGTH } from "./vendor/xactions/reply"
-
 /**
  * A public reply under the brand's name is subject to two constraints
  * regardless of what an admin types.
@@ -10,7 +8,8 @@ import { MAX_TWEET_LENGTH } from "./vendor/xactions/reply"
  * `feature-specs/09-tweet-fetch-agent.md`.
  */
 
-export { MAX_TWEET_LENGTH }
+/** X's post limit for a standard (non-premium) account. */
+export const MAX_TWEET_LENGTH = 280
 
 export interface GuardViolation {
   /** Named so the rejection is fixable rather than mysterious. */

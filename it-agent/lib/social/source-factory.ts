@@ -1,5 +1,4 @@
 import { FixtureTweetSource } from "./fixture-tweet-source"
-import { LiveTweetSource } from "./live-tweet-source"
 import type { TweetSource } from "./tweet-source"
 
 export class TweetSourceConfigError extends Error {
@@ -10,29 +9,32 @@ export class TweetSourceConfigError extends Error {
 }
 
 /**
- * `TWEET_SOURCE=live` opts into the network; anything else uses fixtures.
+ * Returns the fixture source. `TWEET_SOURCE=live` **throws** rather than
+ * silently serving fixtures — a demo quietly showing canned tweets while
+ * claiming to be live is worse than one that errors.
  *
- * When `live` is set and the credential is missing this **throws at the call
- * site**. It must never silently fall back to fixtures: a demo quietly
- * showing canned tweets while claiming to be live is worse than one that
- * errors.
+ * There is no live implementation in the tree. It was removed on 2026-08-28:
+ * the only viable route was X's internal GraphQL API, and X enforces a
+ * per-request `x-client-transaction-id` derived from page state that a server
+ * cannot generate — omitting it returns 404, replaying a captured one returns
+ * 403. Verified against a real logged-in session; the bearer token, session
+ * cookies and query ids were all correct and it still failed. See
+ * `feature-specs/09-tweet-fetch-agent.md`.
+ *
+ * `TweetSource` remains the seam: a live adapter drops in here without any
+ * other change if the blocker is ever solved, or if the fetch is moved into a
+ * real browser.
  */
 export function getTweetSource(): TweetSource {
-  if (process.env.TWEET_SOURCE !== "live") {
-    return new FixtureTweetSource()
-  }
-
-  const authToken = process.env.X_AUTH_TOKEN
-  const csrfToken = process.env.X_CSRF_TOKEN
-  if (!authToken || !csrfToken) {
+  if (process.env.TWEET_SOURCE === "live") {
     throw new TweetSourceConfigError(
-      "TWEET_SOURCE=live requires X_AUTH_TOKEN and X_CSRF_TOKEN. " +
-        "Set them in .env.local or unset TWEET_SOURCE to use the fixture corpus. " +
-        "Refusing to fall back silently.",
+      "TWEET_SOURCE=live is set, but no live tweet source exists in this build. " +
+        "X requires a per-request x-client-transaction-id that a server cannot " +
+        "generate. Unset TWEET_SOURCE to use the fixture corpus.",
     )
   }
 
-  return new LiveTweetSource({ authToken, csrfToken })
+  return new FixtureTweetSource()
 }
 
 /**

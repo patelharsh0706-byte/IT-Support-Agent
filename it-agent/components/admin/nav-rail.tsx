@@ -128,15 +128,16 @@ export function AdminNavRail({ cases }: AdminNavRailProps) {
               label="Grievance Queue"
               isActive={pathname === "/admin/reports/grievances"}
             />
+          </AdminNavGroup>
 
-            <AdminNavGroup label="Agent" icon={Bot} level={1} defaultOpen={false}>
-              <AdminNavLink
-                href="/admin/reports/agent/twitter"
-                label="Twitter Agents"
-                isActive={pathname === "/admin/reports/agent/twitter"}
-                level={2}
-              />
-            </AdminNavGroup>
+          {/* Top-level, not nested under Reports: the agents are a working
+              surface a CSR acts on, not a report they read. */}
+          <AdminNavGroup label="Agents" icon={Bot} level={0} defaultOpen={false}>
+            <AdminNavLink
+              href="/admin/agents/twitter"
+              label="Twitter Agents"
+              isActive={pathname === "/admin/agents/twitter"}
+            />
           </AdminNavGroup>
         </nav>
       </ScrollArea>
