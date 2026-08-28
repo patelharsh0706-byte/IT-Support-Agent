@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
         // the classified intent and issue, the priority the pipeline decided,
         // and the confidence behind it. Without this the customer's Ticket
         // Status panel stays on "Raised" forever.
-        await applyTurnOutcome({
+        const updatedRequest = await applyTurnOutcome({
           serviceRequestId,
           status: result.outcome,
           intent: result.classification.intent,
@@ -120,6 +120,11 @@ export async function POST(request: NextRequest) {
           priority: result.priority?.priority ?? null,
           escalationReason: result.escalationReason ?? null,
           message: reply,
+          // The updated row, echoed like the message rows are. The client
+          // holds tickets in `useState`, which React never re-initialises
+          // from changed props, so `router.refresh()` alone leaves the
+          // Ticket Status panel showing the ticket as it was at page load.
+          serviceRequest: updatedRequest,
         })
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error)

@@ -999,6 +999,26 @@ change.
     `initiated / duplicate_charge`, and an out-of-scope question →
     `escalated` with `escalated_at` set.
 
+- **Ticket Status panel showed stale state after a turn**
+  - Reported from the UI: card 0093 went `inactive → active` and the
+    ticket row correctly became `resolved / card_activation / 0.95`, but
+    the panel still read "Raised". The backend was right; the client was
+    stale.
+  - Cause: `customer-dashboard.tsx` holds tickets in
+    `useState(initialTickets)`, and **React never re-initialises state
+    from changed props**. `router.refresh()` re-ran the server component
+    and passed fresh props, which the existing state ignored.
+  - Fixed the same way the message rows already work: the route echoes
+    the updated `service_request` row in the `result` event and the
+    client replaces that ticket in state. No reliance on a refetch.
+  - **Customer-facing copy fixed too.** The agent had replied "Your card
+    ending in 0093 has been re-read as active" — internal verification
+    wording, parroted from the context handed to the compose model. The
+    prompt now states that the detail line is staff wording to be
+    translated, never quoted, and forbids referring to itself, another
+    agent or a "previous agent" (an earlier reply had invented one).
+    Now reads: "The card is now working again. You can use it as usual."
+
 ## In Progress
 
 - None.

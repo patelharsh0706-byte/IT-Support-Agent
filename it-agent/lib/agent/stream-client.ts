@@ -1,6 +1,7 @@
-import type { chatMessages } from "@/lib/sqlite/schema"
+import type { chatMessages, serviceRequests } from "@/lib/sqlite/schema"
 
 type ChatMessageRow = typeof chatMessages.$inferSelect
+type ServiceRequestRow = typeof serviceRequests.$inferSelect
 
 /**
  * Client-side reader for the NDJSON stream `app/api/chat/route.ts` produces.
@@ -19,6 +20,8 @@ export type ChatStreamEvent =
       priority: string | null
       escalationReason: string | null
       message: ChatMessageRow
+      /** The ticket as stored after the turn — status, issue, priority. */
+      serviceRequest: ServiceRequestRow | null
     }
   | { type: "error"; error: string }
 

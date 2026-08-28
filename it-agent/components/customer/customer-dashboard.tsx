@@ -146,7 +146,16 @@ export function CustomerDashboard({
         if (event.type === "accepted" || event.type === "result") {
           setMessages((prev) => [...prev, toChatMessage(event.message, ticketId)])
         }
-        if (event.type === "result") outcome = event.outcome
+        if (event.type === "result") {
+          outcome = event.outcome
+          // Replace the ticket from the row the server wrote. Local state is
+          // never re-seeded from props, so without this the Ticket Status
+          // panel would keep showing "Raised" after the agent resolved it.
+          if (event.serviceRequest) {
+            const updated = toTicket(event.serviceRequest)
+            setTickets((prev) => prev.map((t) => (t.id === ticketId ? updated : t)))
+          }
+        }
         if (event.type === "error") return false
       }
 
