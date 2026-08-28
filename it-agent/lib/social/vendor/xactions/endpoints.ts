@@ -10,18 +10,34 @@
 export const GRAPHQL_BASE = "https://x.com/i/api/graphql"
 
 /**
- * NOT A SECRET. This is the public web-client bearer token that x.com serves
- * to every anonymous browser, and it is the same value in every open-source
- * client. Real authentication is the session cookie pair in `.env.local`
- * (`X_AUTH_TOKEN` / `X_CSRF_TOKEN`), which is never committed.
+ * NOT A SECRET. This is the public web-client bearer token x.com serves to
+ * browsers — the same value in every open-source client. Real authentication
+ * is the session cookie pair in `.env.local` (`X_AUTH_TOKEN` /
+ * `X_CSRF_TOKEN`), which is never committed.
  *
  * Split across a join so secret scanners do not flag a token that is public by
  * design; recombined at module load.
+ *
+ * **This value rotates.** Upstream pins it and self-heals by re-scraping
+ * x.com's JS bundles; we dropped that background scrape, so the pinned value
+ * goes stale on X's schedule rather than ours. When it does, *every* call
+ * fails with HTTP 404 and `code: 34` ("Sorry, that page does not exist") —
+ * including stable v1.1 endpoints, and regardless of how valid the session
+ * cookies are. That symptom means the bearer, not the cookies and not the
+ * query ids.
+ *
+ * `X_BEARER_TOKEN` overrides it. Copy the current value from a logged-in
+ * browser: DevTools → Network → any request to `/i/api/graphql/…` → the
+ * `authorization: Bearer …` request header.
  */
-export const BEARER_TOKEN = [
+const PINNED_BEARER_TOKEN = [
   "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs",
   "%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
 ].join("")
+
+export const BEARER_TOKEN = process.env.X_BEARER_TOKEN?.trim()
+  ? process.env.X_BEARER_TOKEN.trim().replace(/^Bearer\s+/i, "")
+  : PINNED_BEARER_TOKEN
 
 export interface GraphQLOperation {
   queryId: string

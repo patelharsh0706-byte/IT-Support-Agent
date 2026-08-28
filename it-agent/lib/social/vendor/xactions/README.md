@@ -56,6 +56,43 @@ functions, so we ported those.
 a `@license MIT` JSDoc tag. The repository's `LICENSE` file and its
 `package.json` both declare Apache-2.0, so that is what we have honoured here.
 
+## Known broken: the SearchTimeline query id is stale (2026-08-28)
+
+The live path does not work as shipped. `SearchTimeline` is pinned to
+`hyPfJYJ_XAtDYoslQc-Rgg` (upstream's value, dated 2026-08-27) and X has since
+rotated it; the endpoint returns **404**. Fetching a fresh id and updating
+`endpoints.ts` is the whole fix.
+
+**Everything else was verified working** against a real logged-in session, by
+replaying a browser's own request and removing one variable at a time:
+
+| tested | result |
+|---|---|
+| the pinned bearer token | current — byte-identical to the browser's |
+| two cookies only (`auth_token`, `ct0`) | **200** — the extra ~15 browser cookies are not needed |
+| no `x-client-transaction-id` | **200** — the header is not required |
+| our exact header shape | **200** |
+| `SearchTimeline` with the pinned id | **404** |
+
+So do not re-debug auth, cookies, headers or the bearer. It is the id.
+
+Two traps that cost real time here, recorded so they do not cost it twice:
+
+- **`/i/api/1.1/account/settings.json` and `guest/activate.json` both 404 now** —
+  they are retired, not rejecting you. They are useless as auth checks and
+  actively misleading: a 404 there looks exactly like a credential failure.
+- **X returns 404, not 401/403, for a bad query id.** Wrong-id and
+  no-such-endpoint are indistinguishable by status code.
+
+To get a current id: on x.com, run a search, then in the DevTools **Console**
+run `performance.getEntriesByType('resource').map(e=>e.name)
+.find(n=>n.includes('SearchTimeline'))`. The id is the path segment before
+`/SearchTimeline`. `CreateTweet` rotates the same way and will need the same
+treatment before the reply path can publish live.
+
+Because these rotate on X's schedule, consider moving both ids to environment
+variables so a rotation is a config change rather than a code change.
+
 ## Warning
 
 These endpoints are X's internal GraphQL API, not a supported public API. They

@@ -771,8 +771,23 @@ change.
     the repeat post is `high`, the guard blocks all three account-specific
     replies before any publish call, a double-send is rejected, a failed
     row keeps its error and text, and dismiss is reversible.
+  - **Live path is blocked upstream, and it is one constant (2026-08-28).**
+    Attempted with real session cookies. The pinned `SearchTimeline`
+    GraphQL query id has been rotated by X and returns 404. Everything
+    else was verified working by replaying a browser's own request and
+    removing one variable at a time: the pinned bearer token is current
+    (byte-identical to the browser's), two cookies are enough (the ~15
+    others are not needed), and `x-client-transaction-id` is not
+    required — our exact header shape returns 200. Two traps cost real
+    time and are written up in `lib/social/vendor/xactions/README.md`:
+    `guest/activate.json` and `1.1/account/settings.json` are both
+    retired and 404 in a way that mimics a credential failure, and X
+    returns 404 rather than 401/403 for a stale query id. Fix is to pin a
+    current id; both it and `CreateTweet` should move to env vars, since
+    they rotate on X's schedule. `TWEET_SOURCE=live` is commented out in
+    `.env.local` so the console runs on fixtures meanwhile.
   - **Not verified in-browser** — a signed-in click-through of fetch,
-    reply and dismiss is still owed, as is any live-network run.
+    reply and dismiss is still owed.
   - **Not done in this unit:** promoting a mention into a `service_request`
     (the column exists, the route does not), author-plus-issue dedupe
     (S3), the customer soft-link and case bridge (S4), AI-drafted replies,
