@@ -111,6 +111,31 @@ The application is a three-column dashboard on a single full-viewport surface.
 - **Right panel:** fixed width (~480px). Pinned header with title, status caption, and a close control; scrollable body; actions pinned to a bottom bar when the panel is actionable. On the customer dashboard this panel holds the Ticket Status timeline; on the CSR console it holds the case-detail tool-call log.
 - **Sign-in / sign-up (Clerk):** two-panel on large screens — left panel (`--bg-chrome`) carries a compact logo, tagline, and a short text-only feature list, no cards; right panel is a centred Clerk form on `--bg-base`. Small screens drop the left panel entirely: form only, no gradients, no hero imagery, no scroll-heavy content. **Revised 2026-08-22** — supersedes the earlier single-column centred-card login pattern now that auth is Clerk-hosted, not a custom form.
 
+### Conversation list ordering
+
+**The most recently active conversation is always at the top.** Activity means
+*any* interaction on the case by either side — a customer message, a CSR reply,
+a tool call, a severity change. Not just inbound messages, and never creation
+time.
+
+This is the inbox's job: a CSR scanning the list wants to see what just
+happened. Sorting by `createdAt` buries a five-day-old case that a customer
+replied to a minute ago five days down the list, which is precisely the bug
+this rule exists to prevent.
+
+Implemented as `sortCases(cases, "latest")` in `lib/admin/conversation-views.ts`,
+keyed on `caseLastActivityAt()` — the single definition of "when did anything
+last happen on this case". It is the **default** for
+`app/admin/(console)/conversations`; `?sort=priority` opts into the other
+ordering.
+
+**The reports queue is deliberately different.** `reports/grievances` sorts by
+severity band, then oldest-first within the band, because it answers a
+different question: not "what just happened" but "what should be worked next",
+where an old high-severity case must outrank a fresh low-severity one. Do not
+unify these two orderings — they exist for different jobs, and
+`grievance-queue.tsx` passes `"priority"` explicitly to say so.
+
 ### Message list
 
 Each turn renders as an avatar, an author name with a right-aligned timestamp, then the content block beneath. Customer and agent messages share the same alignment — differentiate by avatar and name, not by left/right positioning. Date dividers are centred labels flanked by hairlines.

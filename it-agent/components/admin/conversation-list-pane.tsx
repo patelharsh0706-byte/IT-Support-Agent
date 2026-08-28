@@ -38,7 +38,9 @@ export function ConversationListPane({ cases, currentCsrName }: ConversationList
   const router = useRouter()
 
   const filters = parseConversationFilters(searchParams)
-  const sort = searchParams.get("sort") === "latest" ? "latest" : "priority"
+  // The inbox defaults to most-recent-first: a CSR scanning conversations
+  // wants what just happened. `?sort=priority` opts into the queue ordering.
+  const sort = searchParams.get("sort") === "priority" ? "priority" : "latest"
   const selectedId = pathname.startsWith("/admin/conversations/")
     ? pathname.slice("/admin/conversations/".length)
     : null
@@ -86,7 +88,7 @@ export function ConversationListPane({ cases, currentCsrName }: ConversationList
             aria-label="Toggle sort order"
             onClick={() => {
               const params = new URLSearchParams(searchParams.toString())
-              if (sort === "priority") params.set("sort", "latest")
+              if (sort === "latest") params.set("sort", "priority")
               else params.delete("sort")
               const qs = params.toString()
               const base = selectedId ? `/admin/conversations/${selectedId}` : "/admin/conversations"

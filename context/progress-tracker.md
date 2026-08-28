@@ -1019,6 +1019,26 @@ change.
     agent or a "previous agent" (an earlier reply had invented one).
     Now reads: "The card is now working again. You can use it as usual."
 
+- **Conversation list now orders by last activity**
+  - Reported from the UI: two conversations from minutes earlier sat at
+    the bottom of the list under cases five days old. Two causes, both
+    fixed. The inbox defaulted to the *queue's* ordering (severity band,
+    then oldest-first), so anything `Low` sank regardless of recency —
+    and even the "latest" option sorted on `createdAt`, so a five-day-old
+    case replied to a minute ago still read as five days old.
+  - `sortCases(cases, "latest")` now keys on `caseLastActivityAt()`,
+    which spans customer messages, CSR replies, tool calls and severity
+    changes — so **any** interaction by either side lifts a conversation,
+    not just an inbound message. It is now the default for the
+    Conversations inbox; `?sort=priority` opts into the other ordering.
+  - **The reports queue is deliberately left alone.** `grievance-queue.tsx`
+    passes `"priority"` explicitly: it answers "what should be worked
+    next", where an old high-severity case must outrank a fresh low one,
+    which is what success criterion 4 requires. The two orderings exist
+    for different jobs and must not be unified.
+  - Rule written up in `context/ui-context.md` under **Conversation list
+    ordering**, including why the two surfaces differ.
+
 ## In Progress
 
 - None.
