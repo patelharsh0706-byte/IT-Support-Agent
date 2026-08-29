@@ -1,3 +1,4 @@
+import { dryRunReply } from "./dry-run-reply"
 import corpus from "./fixtures/brand-mentions.json"
 import type {
   FetchMentionsOptions,
@@ -57,12 +58,6 @@ export class FixtureTweetSource implements TweetSource {
    * — guard, confirm, persisted row — and nothing leaves the machine.
    */
   async reply(opts: ReplyOptions): Promise<PublishedReply> {
-    const replyTweetId = `fixture_reply_${opts.inReplyToTweetId}_${Date.now()}`
-    return {
-      replyTweetId,
-      permalink: `https://x.com/i/status/${replyTweetId}`,
-      sentAt: new Date().toISOString(),
-      isDryRun: true,
-    }
+    return dryRunReply(opts)
   }
 }

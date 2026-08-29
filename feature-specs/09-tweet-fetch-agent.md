@@ -72,37 +72,77 @@ implementation produced it. `PublishedReply` is
   grievance, an account-closure threat, a regulator threat, and **two
   non-grievances** (praise, and an unrelated brand mention) so the urgency
   rules have negative cases to get wrong.
-- **~~`LiveTweetSource` (opt-in, `TWEET_SOURCE=live`)`~~ — attempted, then
-  removed (2026-08-28).** The plan was browser-session automation over X's
-  internal GraphQL API (the XActions approach), since the official API is
-  priced past a prototype and the write tier especially so. It does not work
-  from a server, and the reason is not fixable by us: **X enforces a
-  per-request `x-client-transaction-id`** derived from page state. Omitting it
-  returns 404; replaying a captured one returns 403.
+- **`XApiTweetSource` (opt-in, `TWEET_SOURCE=live`).** The official X API v2,
+  keyed. `GET /2/tweets/search/recent` for mentions, `POST /2/tweets` for a
+  threaded reply. `getTweetSource()` throws on `TWEET_SOURCE=live` with no
+  key rather than silently serving fixtures — a demo quietly showing canned
+  tweets while claiming to be live is worse than one that errors.
 
-  This was verified against a real logged-in session by replaying a browser's
-  own request and removing one variable at a time. Everything else was
-  correct — the pinned bearer token was byte-identical to the browser's, two
-  cookies (`auth_token`, `ct0`) were sufficient, the `SearchTimeline` and
-  `CreateTweet` query ids matched the live bundle exactly — and it still
-  failed. Two traps cost real time and are worth knowing: `guest/activate.json`
-  and `1.1/account/settings.json` are both retired and 404 in a way that mimics
-  a credential failure, and X returns 404 rather than 401/403 for an
-  unrecognised request, so "wrong id" and "no such endpoint" are
-  indistinguishable by status code.
+### Reading and writing need different credentials
 
-  The ported XActions code was deleted with it — roughly 600 lines of
-  third-party code that could not run, plus its Apache-2.0 attribution. No
-  third-party code remains in this repo. `TweetSource` stays the seam: a live
-  adapter drops in without any other change if the blocker is solved, or if
-  the fetch moves into a real browser. `getTweetSource()` throws on
-  `TWEET_SOURCE=live` rather than silently serving fixtures.
+This is the part that is easy to miss and expensive to discover at demo time.
+
+| | Endpoint | Auth | Env |
+|---|---|---|---|
+| Read | `/2/tweets/search/recent` | App-only OAuth 2.0 bearer | `X_BEARER_TOKEN` |
+| Write | `POST /2/tweets` | OAuth 1.0a **user context** | `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` |
+
+Posting acts as a user, so the bearer token is rejected for it no matter how
+valid it is. That asymmetry is the deeper reason publishing is a separate
+switch from reading: they are not merely different levels of risk, they are
+different credentials. `publishBlockedReason()` checks for the write set
+*before* a reply row is written, so a CSR is told the credentials are
+incomplete rather than watching a queued reply fail.
+
+`X_SEARCH_QUERY` overrides who is watched, so the same build can point at a
+test account instead of the brand. The default carries `-is:retweet`: without
+it one complaint retweeted forty times arrives as forty mentions, and the
+repeat-complainant signal in `scoreTweet()` reads them as forty grievances.
+
+The OAuth 1.0a signer is ~40 lines in `lib/social/x-api/oauth1.ts` rather than
+a dependency — it is one signature over one endpoint. Two things it gets right
+that a hand-rolled signer usually does not, both covered by tests: the JSON
+body is **not** part of the signature base string, and parameters sort by
+**code point**, not `localeCompare` — ICU collation puts `a` before `B` while
+byte order puts `B` first, so a locale-aware sort passes every lowercase test
+and then fails against the real API.
+
+**Recent search is not on the free tier.** A free-tier key returns 403 on
+`/2/tweets/search/recent` however valid it is; Basic or above is required.
+That is a plan limit rather than a misconfiguration, and the 403 message says
+so instead of sending someone back to re-check their token. The same applies
+to the write side: the app needs Read and write permission, and the access
+token must have been generated *after* that permission was set — a token
+minted under read-only stays read-only.
+
+### Why the scraped route is not here
+
+An earlier attempt went through X's internal GraphQL API with browser session
+cookies, because the official API is priced past a prototype. It does not work
+from a server and the reason is not fixable by us: **X enforces a per-request
+`x-client-transaction-id`** derived from page state. Omitting it returns 404;
+replaying a captured one returns 403.
+
+Verified against a real logged-in session by replaying a browser's own request
+and removing one variable at a time. Everything else was correct — the bearer
+token was byte-identical to the browser's, two cookies (`auth_token`, `ct0`)
+were sufficient, the query ids matched the live bundle exactly — and it still
+failed. Two traps cost real time: `guest/activate.json` and
+`1.1/account/settings.json` are both retired and 404 in a way that mimics a
+credential failure, and X returns 404 rather than 401/403 for an unrecognised
+request, so "wrong id" and "no such endpoint" are indistinguishable by status
+code.
+
+That path and its session-cookie env vars were removed. `TweetSource` was
+always the seam, and the keyed source dropped into it without a change
+anywhere else — which is the whole argument for the interface.
 
 **Handles in the committed fixture corpus are anonymised.** No real
 individual's grievance ships in the repo, per the plan's risk note.
-`X_AUTH_TOKEN` is a session credential for a real account — it lives in
-`.env.local`, never in the repo, and the account used for the demo should be
-a throwaway brand account, not anyone's personal one.
+The API keys live in `.env.local`, never in the repo. The account whose
+access token is used is the account that will publicly appear as the author of
+every reply, so it should be the brand's account or a throwaway — never
+anyone's personal one.
 
 ## Schema (migration `0005_*`)
 
@@ -270,8 +310,8 @@ column exists for it, the route does not.
 - **`components/admin/fetch-tweets-button.tsx`** — POSTs, then
   `router.refresh()`, and reports what came back ("12 fetched, 3 new"). It
   disables while in flight and surfaces the real error text on failure —
-  when a live session cookie has expired, that is the message the operator
-  needs to see, not a generic toast.
+  when a key has hit its rate limit or is on a tier without recent search,
+  that is the message the operator needs to see, not a generic toast.
 - A persistent badge shows whether publishing is **live** or **dry run**. It
   is on screen whenever the composer is, not buried in settings.
 - Badge colours reuse the tokens `case-clocks.tsx` and
@@ -313,8 +353,13 @@ Named here so a reader knows they were considered, not overlooked.
 - a double-click on send produces exactly one `sent` row and one public reply
 - a failed publish leaves a `failed` row with its error, keeps the drafted
   text, and offers a retry
-- `TWEET_SOURCE=live` with no `X_AUTH_TOKEN` returns a visible error and
+- `TWEET_SOURCE=live` with no `X_BEARER_TOKEN` returns a visible error and
   fetches nothing — it does not fall back to fixtures
+- `TWEET_SOURCE=live` with `TWEET_PUBLISH` unset reads real mentions and
+  **posts nothing** — the live client's `reply()` is never called, verified by
+  `source-factory.test.ts` rather than by trusting the flag
+- `TWEET_PUBLISH=live` with only the bearer token is refused with a message
+  naming the four missing user-context variables, before a reply row exists
 - a dismissed tweet leaves the default feed and returns under
   `includeDismissed`
 - no code path publishes without a CSR session and an explicit confirm — grep

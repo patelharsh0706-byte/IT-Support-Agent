@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server"
 
 import { requireCsrName } from "@/lib/auth/session"
 import { checkReply } from "@/lib/social/reply-guard"
-import { getTweetSource, isPublishLive, TweetSourceConfigError } from "@/lib/social/source-factory"
+import { dryRunReply } from "@/lib/social/dry-run-reply"
+import {
+  getTweetSource,
+  isPublishLive,
+  publishBlockedReason,
+  TweetSourceConfigError,
+} from "@/lib/social/source-factory"
 import {
   createPendingReply,
   getTweetMentionByTweetId,
@@ -65,6 +71,19 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     throw error
   }
 
+  // Refused before a row is written, so a CSR is told the publish credentials
+  // are incomplete rather than watching a queued reply fail.
+  const blocked = publishBlockedReason(source)
+  if (blocked) {
+    await recordAgentAction({
+      stage: "tweet_reply",
+      status: "failed",
+      detail: blocked,
+      tweetMentionId: mention.id,
+    })
+    return NextResponse.json({ error: blocked }, { status: 500 })
+  }
+
   const dryRun = source.kind === "fixture" || !isPublishLive()
 
   // Written BEFORE the publish call, so a crash mid-send leaves evidence
@@ -77,10 +96,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   })
 
   try {
-    const published = await source.reply({
-      inReplyToTweetId: mention.tweetId,
-      text: text.trim(),
-    })
+    // A dry run must not reach the live client at all. `TWEET_SOURCE=live`
+    // with `TWEET_PUBLISH` unset means read real mentions, post nothing —
+    // calling `source.reply()` here would post for real while the stored row
+    // claimed a dry run.
+    const published = dryRun
+      ? dryRunReply({ inReplyToTweetId: mention.tweetId, text: text.trim() })
+      : await source.reply({
+          inReplyToTweetId: mention.tweetId,
+          text: text.trim(),
+        })
 
     const sent = await markReplySent(pending.id, {
       platformReplyId: published.replyTweetId,
