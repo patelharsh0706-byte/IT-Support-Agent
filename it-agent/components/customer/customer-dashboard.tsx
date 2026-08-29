@@ -47,6 +47,12 @@ export function CustomerDashboard({
   // never stage detail — agent telemetry is CSR-facing only
   // (`context/project-overview.md`, Chat & Agent Activity).
   const [isAgentWorking, setIsAgentWorking] = useState(false)
+  /**
+   * A servicing failure, which is not a send failure. The message is already
+   * stored and on screen by the time the agent can fail, so this is reported
+   * next to the working indicator rather than through the composer's retry.
+   */
+  const [turnError, setTurnError] = useState<string | null>(null)
   const [isEscalateOpen, setIsEscalateOpen] = useState(false)
   const [escalationReason, setEscalationReason] = useState("")
   const [escalateError, setEscalateError] = useState<string | null>(null)
@@ -131,6 +137,7 @@ export function CustomerDashboard({
     if (!ticketId) return false
 
     setIsAgentWorking(true)
+    setTurnError(null)
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
@@ -156,7 +163,17 @@ export function CustomerDashboard({
             setTickets((prev) => prev.map((t) => (t.id === ticketId ? updated : t)))
           }
         }
-        if (event.type === "error") return false
+        if (event.type === "error") {
+          // The message was persisted and streamed back as `accepted` before
+          // the agent ran, and it is already on screen. Returning false here
+          // would tell the composer the send failed, so a retry would write a
+          // second identical row. The send succeeded; the servicing did not,
+          // and those are reported separately.
+          setTurnError(
+            "Your message was received, but the agent could not finish. A specialist will follow up.",
+          )
+          break
+        }
       }
 
       // The turn may have changed status or priority on the ticket; re-read
@@ -235,6 +252,11 @@ export function CustomerDashboard({
           {isAgentWorking ? (
             <p className="px-4 pb-1 text-[13px] text-muted-foreground" role="status">
               The servicing agent is working on this…
+            </p>
+          ) : null}
+          {turnError ? (
+            <p className="px-4 pb-1 text-[13px] text-state-error" role="alert">
+              {turnError}
             </p>
           ) : null}
           <Composer onSend={handleSend} disabled={!selectedTicketId || isAgentWorking} />

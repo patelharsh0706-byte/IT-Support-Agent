@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import type { Classification } from "./classify"
 import type { ActivityEvent } from "./events"
-import { runServicingTurn } from "./pipeline"
+import { fallbackReply, runServicingTurn } from "./pipeline"
 
 /**
  * The pipeline's branching, with no model involved anywhere — the classifier
@@ -120,5 +120,62 @@ describe("the activity trail", () => {
     const p = events.find((e) => e.stage === "prioritize")
     expect(p?.detail).toContain("high")
     expect(p?.detail).toContain("Fraud language")
+  })
+})
+
+// By the time the closing sentence is written, the account change has already
+// been made and independently verified. A provider failure there must not
+// throw away a turn that succeeded — the route would persist no reply and
+// stream an error, so the customer would see a failure for a real change.
+describe("a failed closing sentence does not discard the outcome", () => {
+  async function runWithBrokenComposer(c: Classification) {
+    const events: ActivityEvent[] = []
+    const result = await runServicingTurn({
+      customerId: CUSTOMER,
+      message: "stub message",
+      emit: (e) => void events.push(e),
+      classifier: async () => c,
+      compose: async () => {
+        throw new Error("provider unavailable")
+      },
+    })
+    return { result, events }
+  }
+
+  it("still returns an escalated turn, with its reason intact", async () => {
+    const { result } = await runWithBrokenComposer(
+      classification({ issue: "other", intent: null, belowThreshold: true }),
+    )
+
+    expect(result.outcome).toBe("escalated")
+    expect(result.escalationReason).toBeTruthy()
+    expect(result.reply).toContain("specialist")
+  })
+
+  it("never says resolved when the outcome was an escalation", async () => {
+    const { result } = await runWithBrokenComposer(
+      classification({ issue: "other", intent: null, belowThreshold: true }),
+    )
+
+    expect(result.reply.toLowerCase()).not.toContain("complete")
+  })
+})
+
+describe("the deterministic fallback wording", () => {
+  const base = {
+    classification: classification(),
+    priority: null,
+  } as unknown as Parameters<typeof fallbackReply>[0]
+
+  it("does not claim a dispute is resolved (Reg Z)", () => {
+    const reply = fallbackReply({ ...base, outcome: "initiated" }).toLowerCase()
+    expect(reply).toContain("investigation")
+    for (const forbidden of ["resolved", "refunded", "fixed"]) {
+      expect(reply).not.toContain(forbidden)
+    }
+  })
+
+  it("confirms a resolved turn plainly", () => {
+    expect(fallbackReply({ ...base, outcome: "resolved" })).toContain("complete")
   })
 })

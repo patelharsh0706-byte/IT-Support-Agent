@@ -25,8 +25,19 @@ const lastFour = z
   .string()
   .regex(/^\d{4}$/, "The last four digits of the card, e.g. 4821")
 
-export function createCardTools(customerId: string, record: MutationRecorder = () => {}) {
-  return {
+/**
+ * Which card tools a turn is handed.
+ *
+ * `freeze_card` and `unblock_card` are **opposites**, and the scope — not the
+ * prompt — is what keeps them apart. A prompt is guidance; the tool set is the
+ * boundary (`architecture.md`, Invariant 3). A stolen-card turn that is also
+ * handed `unblock_card` can unblock the card the customer just reported gone,
+ * and no amount of prompt wording makes that impossible.
+ */
+export type CardCapability = "servicing" | "report_lost_stolen"
+
+function cardToolGroups(customerId: string, record: MutationRecorder) {
+  const readOnly = {
     get_cards: tool({
       description:
         "List the signed-in customer's cards with their current status. Call this first to find the card the customer means.",
@@ -37,6 +48,9 @@ export function createCardTools(customerId: string, record: MutationRecorder = (
       },
     }),
 
+  }
+
+  const servicing = {
     unblock_card: tool({
       description:
         "Unblock (unfreeze) a frozen card so it can be used again. Only valid when the card's status is 'frozen'.",
@@ -55,16 +69,46 @@ export function createCardTools(customerId: string, record: MutationRecorder = (
             reason: `Card ending ${lastFour} is ${card.status}, not frozen. Activation is a different action.`,
           }
         }
-        const updated = await setCardStatus(customerId, lastFour, "active")
+        const updated = await setCardStatus(customerId, lastFour, "active", "frozen")
         if (updated) record({ kind: "card_status", lastFour, expected: "active" })
         return { ok: updated !== null, status: updated?.status }
       },
     }),
 
+    activate_card: tool({
+      description:
+        "Activate a newly issued card that has never been used. Only valid when the card's status is 'inactive'.",
+      inputSchema: z.object({ lastFour }),
+      execute: async ({ lastFour }) => {
+        const card = await getCardForCustomer(customerId, lastFour)
+        if (!card) {
+          return { ok: false as const, reason: `No card ending ${lastFour} on this account.` }
+        }
+        if (card.status === "active") {
+          return { ok: false as const, reason: `Card ending ${lastFour} is already active.` }
+        }
+        if (card.status !== "inactive") {
+          return {
+            ok: false as const,
+            reason: `Card ending ${lastFour} is ${card.status}, not inactive. Unblocking is a different action.`,
+          }
+        }
+        const updated = await setCardStatus(customerId, lastFour, "active", "inactive")
+        if (updated) record({ kind: "card_status", lastFour, expected: "active" })
+        return { ok: updated !== null, status: updated?.status }
+      },
+    }),
+  }
+
+  const lostStolen = {
     /**
      * The only tool in the codebase that *removes* a capability. Two things
-     * make that acceptable: it is reversible (`unblock_card` is right there),
-     * and leaving a stolen card live is the worse failure by a wide margin.
+     * make that acceptable: it is reversible (a CSR can unfreeze), and leaving
+     * a stolen card live is the worse failure by a wide margin.
+     *
+     * It is reachable only from the `report_lost_stolen` capability, so a
+     * routine unblock turn cannot freeze a working card, and a stolen-card turn
+     * cannot unblock the card it just froze.
      *
      * It still refuses to act on a card that is already frozen or was never
      * activated, so a misclassification cannot churn state.
@@ -90,7 +134,7 @@ export function createCardTools(customerId: string, record: MutationRecorder = (
             reason: `Card ending ${lastFour} was never activated, so it cannot be used anyway.`,
           }
         }
-        const updated = await setCardStatus(customerId, lastFour, "frozen")
+        const updated = await setCardStatus(customerId, lastFour, "frozen", "active")
         if (updated) record({ kind: "card_status", lastFour, expected: "frozen" })
         return {
           ok: updated !== null,
@@ -100,30 +144,34 @@ export function createCardTools(customerId: string, record: MutationRecorder = (
       },
     }),
 
-    activate_card: tool({
-      description:
-        "Activate a newly issued card that has never been used. Only valid when the card's status is 'inactive'.",
-      inputSchema: z.object({ lastFour }),
-      execute: async ({ lastFour }) => {
-        const card = await getCardForCustomer(customerId, lastFour)
-        if (!card) {
-          return { ok: false as const, reason: `No card ending ${lastFour} on this account.` }
-        }
-        if (card.status === "active") {
-          return { ok: false as const, reason: `Card ending ${lastFour} is already active.` }
-        }
-        if (card.status !== "inactive") {
-          return {
-            ok: false as const,
-            reason: `Card ending ${lastFour} is ${card.status}, not inactive. Unblocking is a different action.`,
-          }
-        }
-        const updated = await setCardStatus(customerId, lastFour, "active")
-        if (updated) record({ kind: "card_status", lastFour, expected: "active" })
-        return { ok: updated !== null, status: updated?.status }
-      },
-    }),
   }
+
+  return { readOnly, servicing, lostStolen }
+}
+
+type Groups = ReturnType<typeof cardToolGroups>
+
+// Overloads so the capability literal narrows the returned tool set: asking a
+// servicing set for `freeze_card` is a type error, not a runtime surprise.
+export function createCardTools(
+  customerId: string,
+  record?: MutationRecorder,
+  capability?: "servicing",
+): Groups["readOnly"] & Groups["servicing"]
+export function createCardTools(
+  customerId: string,
+  record: MutationRecorder,
+  capability: "report_lost_stolen",
+): Groups["readOnly"] & Groups["lostStolen"]
+export function createCardTools(
+  customerId: string,
+  record: MutationRecorder = () => {},
+  capability: CardCapability = "servicing",
+) {
+  const { readOnly, servicing, lostStolen } = cardToolGroups(customerId, record)
+  return capability === "report_lost_stolen"
+    ? { ...readOnly, ...lostStolen }
+    : { ...readOnly, ...servicing }
 }
 
 /**

@@ -50,6 +50,14 @@ describe("account specifics are blocked", () => {
     expect(rules("We've refunded the $214.50 charge")).toContain("amount")
   })
 
+  // The gap: a symbol was caught, a currency code was not, so "We refunded
+  // USD 100" was publishable.
+  it("blocks a currency-code amount", () => {
+    expect(rules("We refunded USD 100.")).toContain("amount")
+    expect(rules("EUR 250 has been credited")).toContain("amount")
+    expect(rules("we sent sgd 1,250.00 back")).toContain("amount")
+  })
+
   it("blocks a balance reference", () => {
     expect(rules("Your available credit has been restored")).toContain("balance")
   })

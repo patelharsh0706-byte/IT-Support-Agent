@@ -2,7 +2,7 @@ import { FetchTweetsButton } from "@/components/admin/fetch-tweets-button"
 import { MentionFeed } from "@/components/admin/mention-feed"
 import { MentionFilters } from "@/components/admin/mention-filters"
 import { PublishModeBadge } from "@/components/admin/publish-mode-badge"
-import { isPublishLive } from "@/lib/social/source-factory"
+import { isEffectivelyPublishing } from "@/lib/social/source-factory"
 import { isTweetWindow, type Urgency } from "@/lib/social/types"
 import { listTweetMentions } from "@/lib/sqlite/queries"
 
@@ -51,7 +51,10 @@ export default async function TwitterAgentPage({
       !m.replies.some((r) => r.status === "sent"),
   ).length
 
-  const publishLive = isPublishLive()
+  // The effective mode, not the raw flag: the reply endpoint forces a dry run
+  // for the fixture source and for incomplete publish credentials, and the
+  // badge and the confirm step must agree with it.
+  const publishLive = isEffectivelyPublishing()
 
   return (
     <div className="min-h-0 flex-1 overflow-auto p-6">

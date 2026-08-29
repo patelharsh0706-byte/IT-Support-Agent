@@ -6,7 +6,7 @@ import { activityEvent, noopEmit, type Emit } from "./events"
 import { ISSUE_CATALOG, type Intent } from "./intents"
 import { decidePriority } from "./priority"
 import { servicingModel } from "./provider"
-import { toolsForIntent } from "./scopes"
+import { toolsForIssue } from "./scopes"
 import { verifyAll } from "./verify"
 
 /**
@@ -120,7 +120,9 @@ export async function runServicingTurn(input: TurnInput): Promise<TurnResult> {
 
   // ---- 4. Capability scope: which tools exist for this turn ----------------
   const { mutations, record } = createMutationLog()
-  const tools = toolsForIntent(classification.intent, customerId, record)
+  // Scoped on the issue, not the intent: report_lost_stolen shares an intent
+  // with card unblock, and must not be handed the tool to undo itself.
+  const tools = toolsForIssue(classification.issue, customerId, record)
   const toolNames = Object.keys(tools)
 
   if (toolNames.length === 0) {
@@ -245,13 +247,41 @@ function fallbackClassification(): Classification {
   }
 }
 
-/** Model call 2, or the injected stand-in. */
+/**
+ * Model call 2, or the injected stand-in.
+ *
+ * Wrapped, unlike the classify and execute steps, because by the time this
+ * runs the account change has already been made and independently verified.
+ * Letting a provider error propagate would throw away a turn that succeeded:
+ * the route would persist no reply and stream an error, so the customer would
+ * see a failure for a change that actually happened — and on the escalate path
+ * the escalation reason would be lost with it.
+ *
+ * The fallback is deliberately plain. It states the outcome and nothing more,
+ * which is the one thing that is certainly true at this point.
+ */
 async function compose(
   input: TurnInput,
   partial: Omit<TurnResult, "reply">,
   context: string,
 ): Promise<string> {
-  if (input.compose) return input.compose(partial)
-  const { composeReply } = await import("./confirm")
-  return composeReply({ ...partial, context, model: input.models?.servicing })
+  try {
+    if (input.compose) return await input.compose(partial)
+    const { composeReply } = await import("./confirm")
+    return await composeReply({ ...partial, context, model: input.models?.servicing })
+  } catch {
+    return fallbackReply(partial)
+  }
+}
+
+export function fallbackReply(partial: Omit<TurnResult, "reply">): string {
+  if (partial.outcome === "escalated") {
+    return "Thanks for getting in touch. This one needs a specialist, so I have passed it to a colleague who will follow up with you."
+  }
+  if (partial.outcome === "initiated") {
+    // Reg Z: a dispute opens an investigation. Saying "resolved" here would be
+    // untrue, and the wording must not drift just because the model was down.
+    return "Thanks for getting in touch. The charge has been suspended and a dispute investigation is now open. We will write to you once it concludes."
+  }
+  return "Thanks for getting in touch. Your request is complete and the change is confirmed on your account."
 }

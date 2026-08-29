@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { createCardTools } from "./cards"
 import { createProfileTools } from "./profile"
-import { toolNamesForIntent } from "@/lib/agent/scopes"
+import { toolNamesForIntent, toolNamesForIssue } from "@/lib/agent/scopes"
 
 /**
  * The security contract this unit exists to hold, tested first.
@@ -39,7 +39,7 @@ describe("Invariant 1 — no tool accepts a customer id", () => {
   })
 
   it("card tools accept only lastFour", () => {
-    const cardTools = createCardTools(CUSTOMER)
+    const cardTools = createCardTools(CUSTOMER, () => {}, "servicing")
     for (const name of ["unblock_card", "activate_card"] as const) {
       expect(schemaKeys(cardTools[name].inputSchema)).toEqual(["lastFour"])
     }
@@ -54,15 +54,29 @@ describe("Invariant 3 — capability scope", () => {
   it("a Card Servicing turn is handed only card tools", () => {
     expect(toolNamesForIntent("card_unblock_activation")).toEqual([
       "activate_card",
-      "freeze_card",
       "get_cards",
       "unblock_card",
     ])
   })
 
   it("freeze_card takes no customer id, only lastFour and a reason", () => {
-    const shape = schemaKeys(createCardTools(CUSTOMER).freeze_card.inputSchema)
-    expect(shape.sort()).toEqual(["lastFour", "reason"])
+    const tools = createCardTools(CUSTOMER, () => {}, "report_lost_stolen")
+    expect(schemaKeys(tools.freeze_card.inputSchema).sort()).toEqual(["lastFour", "reason"])
+  })
+
+  // freeze_card and unblock_card are opposites. The scope is what keeps them
+  // apart — the prompt says so too, but a prompt is not a boundary.
+  it("a routine card turn cannot freeze a working card", () => {
+    for (const issue of ["card_unblock", "card_activation"] as const) {
+      expect(toolNamesForIssue(issue)).not.toContain("freeze_card")
+    }
+  })
+
+  it("a stolen-card turn cannot unblock the card it just froze", () => {
+    const names = toolNamesForIssue("report_lost_stolen")
+    expect(names).toEqual(["freeze_card", "get_cards"])
+    expect(names).not.toContain("unblock_card")
+    expect(names).not.toContain("activate_card")
   })
 
   it("a Card Servicing turn cannot reach a profile tool", () => {
@@ -92,7 +106,8 @@ describe("Invariant 3 — capability scope", () => {
 describe("Invariant 2 — the action tool is not its own witness", () => {
   it("no verifier is exposed to the model", () => {
     const exposed = [
-      ...Object.keys(createCardTools(CUSTOMER)),
+      ...Object.keys(createCardTools(CUSTOMER, () => {}, "servicing")),
+      ...Object.keys(createCardTools(CUSTOMER, () => {}, "report_lost_stolen")),
       ...Object.keys(createProfileTools(CUSTOMER)),
     ]
     expect(exposed.filter((n) => n.startsWith("verify"))).toEqual([])
@@ -102,7 +117,8 @@ describe("Invariant 2 — the action tool is not its own witness", () => {
 describe("Invariant 5 — the agent never publishes", () => {
   it("no tool can post anything outward", () => {
     const exposed = [
-      ...Object.keys(createCardTools(CUSTOMER)),
+      ...Object.keys(createCardTools(CUSTOMER, () => {}, "servicing")),
+      ...Object.keys(createCardTools(CUSTOMER, () => {}, "report_lost_stolen")),
       ...Object.keys(createProfileTools(CUSTOMER)),
     ]
     for (const forbidden of ["post", "publish", "reply", "send", "tweet", "email_customer"]) {

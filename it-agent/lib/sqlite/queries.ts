@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm"
 import { currentUser } from "@clerk/nextjs/server"
 import { cache } from "react"
 import { db } from "./client"
@@ -675,15 +675,32 @@ export async function getCardForCustomer(customerId: string, lastFour: string) {
   return row ?? null
 }
 
+/**
+ * Moves a card between states, conditional on it still being in `expected`.
+ *
+ * The tool reads the card, decides, then writes — two statements, so the state
+ * can move in between. Without the predicate a concurrent `unblock_card` could
+ * write `active` after a `freeze_card` succeeded, leaving a card the customer
+ * reported stolen usable while *both* operations reported success. The update
+ * matches nothing in that case and returns null, which the caller reports as a
+ * failure rather than a silent overwrite.
+ *
+ * `expected` is optional only so a caller that genuinely does not care (the
+ * seed) can omit it. Every servicing tool passes one.
+ */
 export async function setCardStatus(
   customerId: string,
   lastFour: string,
   status: "active" | "frozen" | "inactive",
+  expected?: "active" | "frozen" | "inactive",
 ) {
+  const predicates = [eq(cards.customerId, customerId), eq(cards.lastFour, lastFour)]
+  if (expected) predicates.push(eq(cards.status, expected))
+
   const [row] = await db
     .update(cards)
     .set({ status })
-    .where(and(eq(cards.customerId, customerId), eq(cards.lastFour, lastFour)))
+    .where(and(...predicates))
     .returning()
   return row ?? null
 }
@@ -746,7 +763,17 @@ export async function markTransactionDisputed(
   const [row] = await db
     .update(transactions)
     .set({ status: "disputed", disputedAt: new Date().toISOString(), disputeReason: reason })
-    .where(and(eq(transactions.customerId, customerId), eq(transactions.id, transactionId)))
+    // Only a `posted` charge is disputable. Without this a repeat call would
+    // reset `disputedAt` and overwrite the reason, and a call against a
+    // `reversed` charge would drag a finished investigation back to disputed —
+    // the one direction a dispute must never move.
+    .where(
+      and(
+        eq(transactions.customerId, customerId),
+        eq(transactions.id, transactionId),
+        eq(transactions.status, "posted"),
+      ),
+    )
     .returning()
   return row ?? null
 }
@@ -781,7 +808,6 @@ export async function applyTurnOutcome(params: {
   confidence: number
 }) {
   const now = new Date().toISOString()
-  const existing = await getServiceRequestById(params.serviceRequestId)
 
   const [row] = await db
     .update(serviceRequests)
@@ -790,12 +816,17 @@ export async function applyTurnOutcome(params: {
       intent: params.intent,
       issue: params.issue as typeof serviceRequests.$inferInsert.issue,
       priority: params.priority,
-      classificationIntent: params.issue,
+      // The intent, not the issue: `listGrievanceCases` reads this column back
+      // as an `Intent`, so storing the finer-grained issue here mislabelled
+      // every completed turn.
+      classificationIntent: params.intent,
       classificationConfidence: params.confidence,
-      escalatedAt:
-        params.status === "escalated"
-          ? (existing?.escalatedAt ?? now)
-          : (existing?.escalatedAt ?? null),
+      // COALESCE in the statement rather than a read-then-write: the first
+      // escalation timestamp is the one that counts, and reading it in a
+      // separate query lets a second call overwrite it with a stale NULL.
+      ...(params.status === "escalated"
+        ? { escalatedAt: sql`COALESCE(${serviceRequests.escalatedAt}, ${now})` }
+        : {}),
       updatedAt: now,
     })
     .where(eq(serviceRequests.id, params.serviceRequestId))

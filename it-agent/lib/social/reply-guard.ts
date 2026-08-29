@@ -25,8 +25,16 @@ export type GuardResult =
 const DIGIT_RUN = /(?:\d[ -]?){12,}/
 /** A 3–4 digit group introduced as a security code. */
 const CVV = /\b(?:cvv|cvc|security code|pin)\b\D{0,10}\d{3,4}\b/i
-/** Currency amounts — a public reply must not confirm balances or charges. */
-const AMOUNT = /(?:[$€£¥]\s?\d|(?:\b\d[\d,]*\.\d{2}\b)\s?(?:usd|eur|gbp|sgd|inr)?)/i
+/**
+ * Currency amounts — a public reply must not confirm balances or charges.
+ *
+ * Three shapes, because staff write all three: a symbol (`$214.50`), a
+ * currency code before the number (`USD 100`), and a bare decimal amount
+ * (`214.50`). The code-prefixed form was the gap — "We refunded USD 100" was
+ * publishable.
+ */
+const AMOUNT =
+  /(?:[$€£¥]\s?\d|\b(?:usd|eur|gbp|sgd|inr|aud|cad|jpy|chf)\s?\d[\d,]*(?:\.\d{2})?\b|(?:\b\d[\d,]*\.\d{2}\b)\s?(?:usd|eur|gbp|sgd|inr|aud|cad|jpy|chf)?)/i
 const BALANCE = /\b(?:balance|statement balance|available credit|credit limit)\b/i
 /** Transaction and case identifiers. */
 const TXN_ID = /\b(?:txn|transaction|auth|reference|ref|case)\s*(?:id|no|number|#)?\s*[:#]?\s*[a-z0-9-]{6,}\b/i

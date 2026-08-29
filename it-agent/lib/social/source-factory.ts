@@ -83,6 +83,19 @@ export function isPublishLive(): boolean {
 }
 
 /**
+ * Whether a reply pressed right now would really reach a timeline.
+ *
+ * `isPublishLive()` reads one flag; the endpoint also forces a dry run when the
+ * source is the fixture. The board must show the *effective* mode, or
+ * `TWEET_PUBLISH=live` against the fixture source would promise "Post to X" on
+ * the confirm step and then post nothing.
+ */
+export function isEffectivelyPublishing(): boolean {
+  const source = process.env.TWEET_SOURCE === "live"
+  return source && isPublishLive() && readOAuth1Credentials() !== undefined
+}
+
+/**
  * Why publishing is unavailable, or `null` when it is ready. Checked before a
  * reply is written rather than after, so a CSR is told the credentials are
  * missing instead of watching a queued reply fail.
