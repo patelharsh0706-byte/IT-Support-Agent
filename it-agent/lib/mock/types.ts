@@ -26,7 +26,18 @@ export type Intent =
   | "update_contact_info"
 
 export type Priority = "low" | "medium" | "high"
-export type TicketStatus = "open" | "in_progress" | "resolved" | "escalated"
+/**
+ * `initiated` is the terminal state for a dispute and is deliberately distinct
+ * from `resolved`: under Regulation Z a valid dispute suspends the charge and
+ * opens a 30-90 day investigation. Showing that as "resolved" would tell the
+ * customer something untrue (`context/project-overview.md`).
+ */
+export type TicketStatus =
+  | "open"
+  | "in_progress"
+  | "resolved"
+  | "escalated"
+  | "initiated"
 
 export interface Ticket {
   id: string

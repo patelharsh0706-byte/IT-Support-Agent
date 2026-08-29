@@ -1,5 +1,6 @@
 import { Ban } from "lucide-react"
 
+import { ActivityTimestamp } from "@/components/shared/activity-timestamp"
 import type { ActivityEvent, ActivityStatus } from "@/lib/mock/types"
 import { cn } from "@/lib/utils"
 
@@ -46,10 +47,17 @@ export function ActivityEventRow({ event, className }: ActivityEventRowProps) {
           ) : null}
         </p>
         {event.detail ? (
-          <p className="mt-0.5 truncate font-mono text-[12px] text-muted-foreground">
+          // Not truncated any more: the detail is where the reasoning lives
+          // ("confidence 0.90", "raised by: Fraud language"), and a CSR
+          // deciding whether to trust the agent needs to read all of it.
+          <p className="mt-0.5 break-words font-mono text-[12px] text-muted-foreground">
             {event.detail}
           </p>
         ) : null}
+        <ActivityTimestamp
+          iso={event.timestamp}
+          className="mt-0.5 block text-[11px] text-muted-foreground/70"
+        />
       </div>
     </div>
   )

@@ -32,6 +32,7 @@ const dotClassByStatus: Record<TicketStatus, string> = {
   in_progress: "bg-primary",
   escalated: "bg-state-error",
   resolved: "bg-state-success",
+  initiated: "bg-primary",
 }
 
 interface TimelineStep {
@@ -67,6 +68,12 @@ function buildTimeline(ticket: Ticket): TimelineStep[] {
       reached: escalatedReached,
       at: escalatedReached ? (escalatedAt ?? null) : null,
     },
+    // A dispute ends here rather than at "resolved": the charge is suspended
+    // and an investigation is open. The step only appears once reached, so a
+    // card-servicing ticket never shows a dispute stage it will never enter.
+    ...(status === "initiated"
+      ? [{ status: "initiated" as const, reached: true, at: updatedAt }]
+      : []),
     {
       status: "resolved",
       reached: resolvedReached,

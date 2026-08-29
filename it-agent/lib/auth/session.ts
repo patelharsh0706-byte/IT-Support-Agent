@@ -31,14 +31,36 @@ export async function requireCSR() {
   return session;
 }
 
+export interface CsrProfile {
+  name: string;
+  email: string;
+}
+
+/**
+ * The signed-in CSR's display name and email. No CSR identity table exists in
+ * the schema, so this reads straight from the Clerk profile (same pattern as
+ * `resolveCustomer()`).
+ *
+ * Resolved on the server so the nav rail can render the identity as plain
+ * props. `useUser()` returns nothing during SSR and the real user on the
+ * client, which is a hydration mismatch by construction — and `code-standards.md`
+ * asks for server-fetched data passed down regardless.
+ */
+export async function requireCsrProfile(): Promise<CsrProfile> {
+  await requireCSR();
+  const profile = await currentUser();
+  const email = profile?.primaryEmailAddress?.emailAddress ?? "";
+  // `||`, not `??`: Clerk returns an empty string for an unset name, which
+  // `??` would happily pass through as the display name.
+  return { name: profile?.fullName || email || "CSR", email };
+}
+
 /**
  * The signed-in CSR's display name, for stamping `contactedByCsrName` and
  * message authorship. Replaces the old hardcoded `lib/mock/current-csr.ts`
- * constant — no CSR identity table exists in the schema, so this reads
- * straight from the Clerk profile (same pattern as `resolveCustomer()`).
+ * constant.
  */
 export async function requireCsrName() {
-  await requireCSR();
-  const profile = await currentUser();
-  return profile?.fullName ?? profile?.primaryEmailAddress?.emailAddress ?? "CSR";
+  const { name } = await requireCsrProfile();
+  return name;
 }

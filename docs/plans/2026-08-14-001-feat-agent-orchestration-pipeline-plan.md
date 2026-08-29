@@ -174,6 +174,15 @@ type ActivityEvent = {
 
 ### U4. The six IT tools
 
+> **SUPERSEDED (2026-08-28) — do not build from this unit as written.** The
+> tools below are the pre-pivot IT-helpdesk set (`employee_id`,
+> `reset_password`, `unlock_account`, `software_access`). The product moved to
+> Amex servicing on 2026-08-22: six issues across Card Servicing, Transaction &
+> Dispute, and Account & Profile. The *shape* of U4–U7 carries forward and was
+> followed; the tool list did not. See `feature-specs/10-llm-integration.md`
+> for what was actually built, and note that `employee_id` there is
+> `customer_id`, resolved identically from the session.
+
 - **Goal:** Implement the six tools so each derives its actor from the session.
 - **Requirements:** R10, R12
 - **Dependencies:** U2, U3

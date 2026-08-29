@@ -65,6 +65,43 @@ invariant wins and the conflict gets logged in `progress-tracker.md`.
   Client components do not query the database.
 - Route groups (`app/admin/(console)/`) carry shared layout without adding a
   URL segment. Use them instead of duplicating chrome across pages.
+- **Never read identity from a client hook in a server-rendered component.**
+  `useUser()` has no user during the SSR pass and the real one after
+  hydration, so the two renders disagree by construction. Resolve it on the
+  server (`requireCsrProfile()`) and pass plain props down — the same rule as
+  every other data read, and it removes a hydration error rather than
+  suppressing one.
+- **Clerk components that mount themselves must be wrapped in `<ClerkLoaded>`.**
+  `<UserButton />` and friends render a host element whose attributes differ
+  between the server pass and the client one
+  (`data-clerk-component={null}` vs `"UserButton"`), which React reports as a
+  hydration mismatch — and it blames the *sibling* nodes, so the stack trace
+  points at innocent markup. Pair it with a `<ClerkLoading>` placeholder of the
+  same dimensions so the layout does not shift. Both call sites do this; copy
+  the pattern rather than inventing a `useEffect` mounted-flag.
+- **Moving or renaming a route file? Restart the dev server and clear
+  Turbopack's cache first — `rm -rf it-agent/.next/dev`.** Turbopack does not
+  recover from a route disappearing underneath a running `next dev`. Its
+  incremental cache keeps a reference to the deleted page, tries to rebuild it
+  on every hot-reload tick, and panics:
+
+  ```
+  FATAL: Failed to write app endpoint /admin/(console)/<old-path>/page
+  Cell ... no longer exists in task ... directory_tree_to_loader_tree
+  ```
+
+  The browser then reloads in a loop, which reads as "the app is broken" or
+  "I can't log in" — the page never survives long enough to finish a sign-in.
+  Two things that will *not* warn you: `npm run build` passes and prints a
+  correct route table (it is a separate production build and says nothing
+  about the running dev server), and the page still returns a plausible HTTP
+  status. **Check `next dev`'s own output for `FATAL` after any route move.**
+  Learned the hard way on 2026-08-28 moving `reports/agent/twitter` to
+  `agents/twitter`.
+- The same staleness bites `tsc`: `.next/types/validator.ts` is generated and
+  keeps referencing the old path after a move, so `npx tsc --noEmit` reports a
+  missing module that is not a real error. `rm -rf it-agent/.next/types` and
+  rebuild to regenerate it.
 
 ## Styling
 

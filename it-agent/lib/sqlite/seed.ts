@@ -2,6 +2,7 @@ import { db } from "./client"
 import {
   agentActions,
   cards,
+  transactions,
   chatMessages,
   chatSessions,
   customers,
@@ -26,6 +27,7 @@ async function seed() {
     await tx.delete(chatMessages)
     await tx.delete(chatSessions)
     await tx.delete(serviceRequests)
+    await tx.delete(transactions)
     await tx.delete(cards)
     await tx.delete(customers)
 
@@ -45,6 +47,23 @@ async function seed() {
     await tx.insert(cards).values([
       { id: "card_4821", customerId: "cust_you", lastFour: "4821", status: "active" },
       { id: "card_0093", customerId: "cust_you", lastFour: "0093", status: "inactive" },
+    ])
+
+    // --- Transactions ---
+    // Shaped for the two Transaction & Dispute issues: one clearly duplicated
+    // pair (same merchant, same amount, minutes apart) and one charge from a
+    // merchant the customer has never used. Amounts are minor units, so no
+    // float ever touches money.
+    const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+
+    await tx.insert(transactions).values([
+      { id: "txn_1", customerId: "cust_you", cardId: "card_4821", merchant: "Cold Brew Coffee", amountMinor: 640, currency: "USD", postedAt: hoursAgo(30), createdAt: hoursAgo(30) },
+      // The duplicate pair — MERCH#5521 charged twice, eleven minutes apart.
+      { id: "txn_2", customerId: "cust_you", cardId: "card_4821", merchant: "MERCH#5521", amountMinor: 21450, currency: "USD", postedAt: hoursAgo(26), createdAt: hoursAgo(26) },
+      { id: "txn_3", customerId: "cust_you", cardId: "card_4821", merchant: "MERCH#5521", amountMinor: 21450, currency: "USD", postedAt: hoursAgo(25.8), createdAt: hoursAgo(25.8) },
+      // The unrecognized one — a merchant and city the customer has no history with.
+      { id: "txn_4", customerId: "cust_you", cardId: "card_4821", merchant: "LUXE ELECTRONICS ROTTERDAM", amountMinor: 84000, currency: "USD", postedAt: hoursAgo(20), createdAt: hoursAgo(20) },
+      { id: "txn_5", customerId: "cust_you", cardId: "card_4821", merchant: "Metro Transit", amountMinor: 275, currency: "USD", postedAt: hoursAgo(8), createdAt: hoursAgo(8) },
     ])
 
     // --- service_request: chat tickets (Ticket[]) ---

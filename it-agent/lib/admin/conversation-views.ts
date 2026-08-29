@@ -1,3 +1,4 @@
+import { caseLastActivityAt } from "@/lib/mock/case-thread"
 import type { CaseChannel, GrievanceCase, Severity } from "@/lib/mock/types"
 
 export type ConversationView = "all" | "mentions" | "participating" | "unattended"
@@ -105,8 +106,22 @@ export function filterCases(
   )
 }
 
-/** Priority band (current severity) first, then oldest-first within band — the queue's original ordering, now the single definition. */
-export function sortCases(cases: GrievanceCase[], sort: ConversationSort = "priority"): GrievanceCase[] {
+/**
+ * Two orderings, for two different jobs.
+ *
+ * - `priority` — severity band first, then oldest-first within the band. This
+ *   is the *queue's* ordering: "what should be worked next", where an old
+ *   high-severity case must outrank a fresh low one. Used by
+ *   `reports/grievances`.
+ * - `latest` — most recent activity first. This is the *inbox's* ordering:
+ *   "what just happened", which is what a CSR scanning conversations needs.
+ *
+ * `latest` deliberately sorts on **last activity, not creation**. A case
+ * opened five days ago that a customer replied to a minute ago is the most
+ * recent conversation, and sorting it by `createdAt` buried it five days down
+ * — which is exactly what happened before this was fixed.
+ */
+export function sortCases(cases: GrievanceCase[], sort: ConversationSort = "latest"): GrievanceCase[] {
   const sorted = [...cases]
   if (sort === "priority") {
     sorted.sort((a, b) => {
@@ -115,7 +130,13 @@ export function sortCases(cases: GrievanceCase[], sort: ConversationSort = "prio
       return a.createdAt.localeCompare(b.createdAt)
     })
   } else {
-    sorted.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    // `caseLastActivityAt` spans the whole case — customer messages, CSR
+    // replies, tool calls and severity changes — so any interaction by either
+    // side lifts the conversation to the top, not just an inbound message.
+    sorted.sort((a, b) => {
+      const diff = caseLastActivityAt(b).localeCompare(caseLastActivityAt(a))
+      return diff !== 0 ? diff : b.createdAt.localeCompare(a.createdAt)
+    })
   }
   return sorted
 }

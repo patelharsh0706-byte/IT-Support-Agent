@@ -12,6 +12,9 @@ export const customers = sqliteTable(
     clerkUserId: text("clerk_user_id"),
     name: text("name").notNull(),
     email: text("email").notNull(),
+    // Nullable: seeded customers predate this column, and not every customer
+    // has given a number. Added in 0006 for the Update Phone Number issue.
+    phone: text("phone"),
     status: text("status", { enum: ["active", "closed", "unknown"] })
       .notNull()
       .default("active"),
@@ -42,6 +45,39 @@ export const cards = sqliteTable("cards", {
     .default(sql`(current_timestamp)`),
 })
 
+/**
+ * Card transactions. Added in 0006 — the Transaction & Dispute intent had no
+ * data model at all before this, so both of its issues classified correctly
+ * and then escalated for want of anything to act on.
+ */
+export const transactions = sqliteTable("transactions", {
+  id: text("id").primaryKey(),
+  customerId: text("customer_id")
+    .notNull()
+    .references(() => customers.id, { onDelete: "cascade" }),
+  cardId: text("card_id")
+    .notNull()
+    .references(() => cards.id, { onDelete: "cascade" }),
+  merchant: text("merchant").notNull(),
+  /** Minor units (cents), so no float ever touches money. */
+  amountMinor: integer("amount_minor").notNull(),
+  currency: text("currency").notNull().default("USD"),
+  postedAt: text("posted_at").notNull(),
+  /**
+   * `disputed` means the charge is suspended and an investigation is open —
+   * the Reg Z posture. `reversed` is the outcome of one, not its start.
+   */
+  status: text("status", {
+    enum: ["posted", "disputed", "reversed"],
+  })
+    .notNull()
+    .default("posted"),
+  /** Set when a dispute is initiated, so the 30-90 day clock has a start. */
+  disputedAt: text("disputed_at"),
+  disputeReason: text("dispute_reason"),
+  createdAt: text("created_at").notNull(),
+})
+
 export const serviceRequests = sqliteTable("service_request", {
   id: text("id").primaryKey(),
   customerId: text("customer_id").references(() => customers.id, {
@@ -59,10 +95,28 @@ export const serviceRequests = sqliteTable("service_request", {
       "update_contact_info",
     ],
   }),
+  // The finer-grained issue behind the intent. `intent` carries the three
+  // servicing groups; this carries which of the six issues it actually is,
+  // which the CSR queue and the KPIs both need. Nullable until classified.
+  issue: text("issue", {
+    enum: [
+      "card_unblock",
+      "card_activation",
+      "report_lost_stolen",
+      "unrecognized_transaction",
+      "duplicate_charge",
+      "update_phone",
+      "update_email",
+    ],
+  }),
   title: text("title").notNull(),
   priority: text("priority", { enum: ["low", "medium", "high"] }).notNull(),
+  // `initiated` is the terminal state for a dispute, and is deliberately not
+  // `resolved`. Under Regulation Z a valid dispute suspends the charge and
+  // opens an investigation running 30-90 days; calling that "resolved" would
+  // misstate how card disputes work (`context/project-overview.md`).
   status: text("status", {
-    enum: ["open", "in_progress", "resolved", "escalated"],
+    enum: ["open", "in_progress", "resolved", "escalated", "initiated"],
   }).notNull(),
   currentSeverity: text("current_severity", {
     enum: ["low", "medium", "high"],
@@ -96,6 +150,75 @@ export const socialPosts = sqliteTable("social_posts", {
   permalink: text("permalink").notNull(),
   excerpt: text("excerpt").notNull(),
   postedAt: text("posted_at").notNull(),
+})
+
+// A raw brand mention is NOT a case, so it does not live in `social_posts` —
+// that table's `service_request_id` is `notNull` by design and records posts
+// attached to a case that already exists. See `feature-specs/09-tweet-fetch-agent.md`.
+export const tweetMentions = sqliteTable(
+  "tweet_mentions",
+  {
+    id: text("id").primaryKey(),
+    // The platform's own id. Unique, and the entire dedupe story for this
+    // unit: fetching twice over the same window inserts nothing the second
+    // time. Author-plus-issue dedupe into cases is S3, not here.
+    tweetId: text("tweet_id").notNull(),
+    // Display only. A handle is never authentication — invariant 4.
+    authorHandle: text("author_handle").notNull(),
+    authorName: text("author_name").notNull(),
+    text: text("text").notNull(),
+    // The tweet's own timestamp, not ingest time — the 6/12/24h windows and
+    // the aged-grievance rule both key off this.
+    postedAt: text("posted_at").notNull(),
+    permalink: text("permalink").notNull(),
+    // Reach signals; feed the urgency score.
+    replyCount: integer("reply_count").notNull().default(0),
+    likeCount: integer("like_count").notNull().default(0),
+    fetchedAt: text("fetched_at").notNull(),
+    isGrievance: integer("is_grievance", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    urgency: text("urgency", { enum: ["critical", "high", "normal"] })
+      .notNull()
+      .default("normal"),
+    // JSON array of human-readable strings — *why* this urgency, for display.
+    // An admin who cannot see why a tweet is critical stops trusting the mark.
+    urgencyReasons: text("urgency_reasons").notNull().default("[]"),
+    // Nullable and unused in this unit: promoting a mention into a case is
+    // out of scope (S4). The column exists so the route can land later
+    // without a migration.
+    serviceRequestId: text("service_request_id").references(
+      () => serviceRequests.id,
+      { onDelete: "set null" },
+    ),
+    dismissedAt: text("dismissed_at"),
+  },
+  (table) => [uniqueIndex("tweet_mentions_tweet_id_unique").on(table.tweetId)],
+)
+
+// One row per outbound attempt, never overwritten. A `failed` row stays: an
+// admin needs to see that a send was attempted and did not land, because
+// silently discarding it is how a customer ends up believing they were
+// answered when they were not.
+export const tweetReplies = sqliteTable("tweet_replies", {
+  id: text("id").primaryKey(),
+  tweetMentionId: text("tweet_mention_id")
+    .notNull()
+    .references(() => tweetMentions.id, { onDelete: "cascade" }),
+  // Exactly what was sent.
+  text: text("text").notNull(),
+  // Resolved server-side from the session, never from the request body —
+  // the rule `08-persisted-messages.md` established for chat messages.
+  sentByCsrName: text("sent_by_csr_name").notNull(),
+  status: text("status", { enum: ["pending", "sent", "failed"] }).notNull(),
+  platformReplyId: text("platform_reply_id"),
+  platformPermalink: text("platform_permalink"),
+  // The platform's message, on `failed`.
+  error: text("error"),
+  // True when this went through the dry-run path and reached no timeline.
+  isDryRun: integer("is_dry_run", { mode: "boolean" }).notNull().default(true),
+  createdAt: text("created_at").notNull(),
+  sentAt: text("sent_at"),
 })
 
 export const severityChanges = sqliteTable("severity_changes", {
@@ -155,6 +278,13 @@ export const agentActions = sqliteTable("agent_actions", {
     { onDelete: "cascade" },
   ),
   chatMessageId: text("chat_message_id").references(() => chatMessages.id, {
+    onDelete: "cascade",
+  }),
+  // Third nullable subject, alongside the two above: a tweet fetch or a
+  // public reply belongs to neither a service request nor a chat message,
+  // and without this the audit row would be orphaned — unable to answer
+  // "who posted this publicly, and when" (R17).
+  tweetMentionId: text("tweet_mention_id").references(() => tweetMentions.id, {
     onDelete: "cascade",
   }),
   stage: text("stage").notNull(),

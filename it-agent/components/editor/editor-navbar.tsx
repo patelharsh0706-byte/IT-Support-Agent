@@ -1,9 +1,10 @@
 "use client"
 
-import { UserButton } from "@clerk/nextjs"
+import { ClerkLoaded, ClerkLoading, UserButton } from "@clerk/nextjs"
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 
 interface EditorNavbarProps {
@@ -53,7 +54,15 @@ export function EditorNavbar({
       <div className="flex flex-1 items-center justify-center" />
 
       <div className="flex flex-1 items-center justify-end">
-        <UserButton />
+        {/* Same gate as the CSR nav rail: UserButton's host element differs
+            between the server pass and the client one, so it must not render
+            until Clerk has loaded. */}
+        <ClerkLoading>
+          <Skeleton className="size-7 rounded-full" />
+        </ClerkLoading>
+        <ClerkLoaded>
+          <UserButton />
+        </ClerkLoaded>
       </div>
     </header>
   )

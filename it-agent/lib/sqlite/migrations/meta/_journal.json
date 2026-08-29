@@ -36,6 +36,20 @@
       "when": 1787752363201,
       "tag": "0004_drop_escalation_chat_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1787843453133,
+      "tag": "0005_curious_mantis",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787905539330,
+      "tag": "0006_greedy_edwin_jarvis",
+      "breakpoints": true
     }
   ]
 }

@@ -1,19 +1,27 @@
 "use client"
 
-import { UserButton, useUser } from "@clerk/nextjs"
-import { BarChart3, LayoutList, MessagesSquare, Search } from "lucide-react"
+import { ClerkLoaded, ClerkLoading, UserButton } from "@clerk/nextjs"
+import { BarChart3, Bot, LayoutList, MessagesSquare, Search } from "lucide-react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
 import { AdminNavGroup } from "@/components/admin/nav-group"
 import { AdminNavLink } from "@/components/admin/nav-link"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Skeleton } from "@/components/ui/skeleton"
+import type { CsrProfile } from "@/lib/auth/session"
 import { buildConversationsHref, countByChannel, countByView } from "@/lib/admin/conversation-views"
 import { channelMeta, channelOrder } from "@/lib/mock/channels"
 import type { GrievanceCase } from "@/lib/mock/types"
 
 interface AdminNavRailProps {
   cases: GrievanceCase[]
+  /**
+   * Resolved in the layout, not from `useUser()` here. Clerk's client hook has
+   * no user during SSR and the real one after hydration, so reading it in a
+   * server-rendered client component is a hydration mismatch by construction.
+   */
+  csr: CsrProfile
 }
 
 /**
@@ -21,11 +29,10 @@ interface AdminNavRailProps {
  * `router.replace` on every keystroke — free at this data volume, but not a
  * pattern to copy into a real search backend without debouncing.
  */
-export function AdminNavRail({ cases }: AdminNavRailProps) {
+export function AdminNavRail({ cases, csr }: AdminNavRailProps) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const router = useRouter()
-  const { user } = useUser()
 
   const view = searchParams.get("view")
   const channel = searchParams.get("channel")
@@ -129,18 +136,34 @@ export function AdminNavRail({ cases }: AdminNavRailProps) {
               isActive={pathname === "/admin/reports/grievances"}
             />
           </AdminNavGroup>
+
+          {/* Top-level, not nested under Reports: the agents are a working
+              surface a CSR acts on, not a report they read. */}
+          <AdminNavGroup label="Agents" icon={Bot} level={0} defaultOpen={false}>
+            <AdminNavLink
+              href="/admin/agents/twitter"
+              label="Twitter Agents"
+              isActive={pathname === "/admin/agents/twitter"}
+            />
+          </AdminNavGroup>
         </nav>
       </ScrollArea>
 
       <div className="flex shrink-0 items-center gap-2 border-t border-sidebar-border px-3 py-3">
-        <UserButton />
+        {/* UserButton mounts itself only once Clerk's script has loaded, and
+            its host element differs between the server pass and the client
+            one. Gating on ClerkLoaded means the server and the first client
+            render agree — both show the placeholder — so there is nothing to
+            mismatch. The two are the same size, so the rail does not shift. */}
+        <ClerkLoading>
+          <Skeleton className="size-7 shrink-0 rounded-full" />
+        </ClerkLoading>
+        <ClerkLoaded>
+          <UserButton />
+        </ClerkLoaded>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13px] font-medium text-sidebar-foreground">
-            {user?.fullName ?? "Signed in"}
-          </p>
-          <p className="truncate text-[12px] text-sidebar-foreground/60">
-            {user?.primaryEmailAddress?.emailAddress ?? ""}
-          </p>
+          <p className="truncate text-[13px] font-medium text-sidebar-foreground">{csr.name}</p>
+          <p className="truncate text-[12px] text-sidebar-foreground/60">{csr.email}</p>
         </div>
       </div>
     </aside>
