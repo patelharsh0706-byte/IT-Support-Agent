@@ -65,6 +65,20 @@ invariant wins and the conflict gets logged in `progress-tracker.md`.
   Client components do not query the database.
 - Route groups (`app/admin/(console)/`) carry shared layout without adding a
   URL segment. Use them instead of duplicating chrome across pages.
+- **Never read identity from a client hook in a server-rendered component.**
+  `useUser()` has no user during the SSR pass and the real one after
+  hydration, so the two renders disagree by construction. Resolve it on the
+  server (`requireCsrProfile()`) and pass plain props down — the same rule as
+  every other data read, and it removes a hydration error rather than
+  suppressing one.
+- **Clerk components that mount themselves must be wrapped in `<ClerkLoaded>`.**
+  `<UserButton />` and friends render a host element whose attributes differ
+  between the server pass and the client one
+  (`data-clerk-component={null}` vs `"UserButton"`), which React reports as a
+  hydration mismatch — and it blames the *sibling* nodes, so the stack trace
+  points at innocent markup. Pair it with a `<ClerkLoading>` placeholder of the
+  same dimensions so the layout does not shift. Both call sites do this; copy
+  the pattern rather than inventing a `useEffect` mounted-flag.
 - **Moving or renaming a route file? Restart the dev server and clear
   Turbopack's cache first — `rm -rf it-agent/.next/dev`.** Turbopack does not
   recover from a route disappearing underneath a running `next dev`. Its
